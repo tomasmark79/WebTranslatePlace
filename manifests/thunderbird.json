@@ -1,0 +1,36 @@
+{
+  "manifest_version": 2,
+  "description": "Translate selected email text into Czech and Czech email drafts into English",
+  "permissions": [
+    "storage",
+    "compose",
+    "messagesModify",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js",
+      "thunderbird-background.js"
+    ],
+    "persistent": true
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "webtranslateplace-thunderbird@digitalspace.name",
+      "strict_min_version": "128.0"
+    }
+  },
+  "commands": {
+    "translate-selection": {
+      "suggested_key": {
+        "default": "Ctrl+Alt+S",
+        "mac": "Command+Alt+S"
+      },
+      "description": "Translate selected email text or draft"
+    }
+  }
+}

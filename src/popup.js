@@ -1,3 +1,8 @@
+// Thunderbird uses the same settings and backups, without Discord controls.
+if (composerApi.runtime.getManifest?.().compose_action) {
+  document.getElementById('discord-settings').hidden = true;
+}
+
 const entriesElement = document.getElementById('entries');
 const statusElement = document.getElementById('status');
 const clearButton = document.getElementById('clear');

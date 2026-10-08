@@ -24,9 +24,10 @@ function selectedText() {
       text: active.value.slice(start, end) };
   }
   if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' ||
-      active.isContentEditable === false) return null;
+      (active.isContentEditable === false && !(globalThis.WTP_COMPOSE && document.designMode === 'on'))) return null;
 
-  const editor = active.closest?.('[contenteditable="true"], [contenteditable="plaintext-only"]');
+  const editor = active.closest?.('[contenteditable="true"], [contenteditable="plaintext-only"]') ||
+    (globalThis.WTP_COMPOSE && document.designMode === 'on' ? document.body : null);
   const selection = window.getSelection();
   if (!editor || !selection || selection.isCollapsed || selection.rangeCount !== 1) return null;
   const range = selection.getRangeAt(0).cloneRange();
@@ -103,11 +104,11 @@ async function request(path, body, apiUrl) {
   return response.body;
 }
 
-async function translate(text) {
+async function translate(text, source = 'cs', target = 'en') {
   const stored = await selectionApi.storage.local.get('translationApiUrl');
   const apiUrl = stored.translationApiUrl || 'http://127.0.0.1:5001';
   const deadline = Date.now() + TRANSLATION_TIMEOUT_MS;
-  let result = await request('/translate', { q: text, source: 'cs', target: 'en' }, apiUrl);
+  let result = await request('/translate', { q: text, source, target }, apiUrl);
   if (!/^[a-f0-9]{32}$/.test(result.jobId || '')) {
     throw new Error('Server nevrátil platné ID překladu.');
   }
@@ -156,5 +157,8 @@ async function translateSelection() {
 }
 
 selectionApi.runtime.onMessage.addListener(message => {
-  if (message?.type === 'translate-selection') void translateSelection();
+  if (message?.type === 'translate-selection') {
+    if (globalThis.WTP_READ_MESSAGE) void translateReceivedSelection();
+    else void translateSelection();
+  }
 });

@@ -27,7 +27,7 @@ class BuildTests(unittest.TestCase):
         expected_files = {"manifest.json", "background.js", "content.js", "selection.js", "api-settings.js",
                           "popup.js", "popup.html", "popup.css", "icons/icon16.png", "icons/icon32.png",
                           "icons/icon48.png", "icons/icon128.png"}
-        self.assertEqual(len(list(self.output.glob("webtranslateplace-*"))), 4)
+        self.assertEqual(len(list(self.output.glob("webtranslateplace-*"))), 5)
         for target in ("chrome", "firefox", "safari", "epiphany"):
             with self.subTest(target=target):
                 directory = self.output / target
@@ -73,6 +73,33 @@ class BuildTests(unittest.TestCase):
                     self.assertEqual(manifest["manifest_version"], 3)
                     self.assertIn("<all_urls>", manifest["host_permissions"])
                     self.assertNotIn("optional_host_permissions", manifest)
+
+    def test_thunderbird_package_and_mail_entry_points(self):
+        self.build("thunderbird")
+        directory = self.output / "thunderbird"
+        manifest = json.loads((directory / "manifest.json").read_text())
+        self.assertEqual(manifest["manifest_version"], 2)
+        self.assertNotIn("content_scripts", manifest)
+        self.assertNotIn("host_permissions", manifest)
+        self.assertNotIn("action", manifest)
+        self.assertIn("compose", manifest["permissions"])
+        self.assertIn("messagesModify", manifest["permissions"])
+        self.assertNotIn("messagesRead", manifest["permissions"])
+        self.assertEqual(manifest["browser_specific_settings"]["gecko"]["strict_min_version"], "128.0")
+        for action in ("browser_action", "compose_action", "message_display_action"):
+            self.assertTrue((directory / manifest[action]["default_popup"]).is_file())
+        archive_path = next(self.output.glob("*thunderbird*.xpi"))
+        with ZipFile(archive_path) as archive:
+            self.assertIsNone(archive.testzip())
+            for name in archive.namelist():
+                self.assertEqual(archive.read(name), (directory / name).read_bytes())
+            for name in manifest["background"]["scripts"]:
+                self.assertIn(name, archive.namelist())
+            for name in ("thunderbird-compose.js", "thunderbird-message.js", "selection.js"):
+                self.assertEqual(archive.read(name), (ROOT / "src" / name).read_bytes())
+        before = archive_path.read_bytes()
+        self.build("thunderbird")
+        self.assertEqual(before, archive_path.read_bytes())
 
     def test_rebuild_is_reproducible_and_removes_stale_runtime_files(self):
         self.build("chrome")

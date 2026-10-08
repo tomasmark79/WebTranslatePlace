@@ -1,6 +1,6 @@
 # WebTranslatePlace
 
-WebTranslatePlace combines Discord message translation with Czech-to-English draft translation in one browser extension. It uses shared sources for Chrome/Chromium (including Edge, Brave and other Chromium browsers), Firefox, Safari and GNOME Web (Epiphany).
+WebTranslatePlace combines Discord message translation with Czech-to-English draft translation in one browser extension. It uses shared sources for Chrome/Chromium (including Edge, Brave and other Chromium browsers), Firefox, Safari, GNOME Web (Epiphany) and Thunderbird.
 
 - **Discord messages → Czech:** click the translation icon beside a message. Translation appears progressively; click again to restore the original. The icon pulses only while translating and shows a static blue check mark after completion, including when viewing the original. Original colors and typography are preserved. Messages being edited and the composer are excluded.
 - **Selected Czech draft → English:** select text in a text input, textarea or contenteditable editor and press **Ctrl+Alt+S in Firefox** (**Command+Option+S** on macOS), or **Shift+Alt+S** in other browsers (**Shift+Option+S** on macOS). This includes Discord's composer. The extension waits for the complete translation, replaces only the selected text, and never sends the message.
@@ -8,14 +8,14 @@ WebTranslatePlace combines Discord message translation with Czech-to-English dra
 
 Discord translation support is enabled by default. Use **Podpora překladu Discordu** in the popup to turn it off or on. The setting is saved locally and applies to open Discord tabs immediately. Turning it off removes message translation icons and restores original messages; selected-draft translation remains available, including in Discord's composer.
 
-If a draft or its selection changes while translation runs, the extension leaves it alone. Password, disabled and read-only fields are ignored. If saving the original fails, translation does not start. Selections outside editable fields are not translated.
+If a draft or its selection changes while translation runs, the extension leaves it alone. Password, disabled and read-only fields are ignored. If saving the original fails, translation does not start. In browser targets, selections outside editable fields are not translated.
 
-This is a browser client; it includes no server or language model. It is a new extension with its own storage and identity. Existing DiMeTrans/CzEn Composer settings and backups are not migrated automatically. Disable those extensions when testing WebTranslatePlace on the same pages to avoid duplicate icons and shortcut conflicts.
+This is an extension client; it includes no server or language model. It is a new extension with its own storage and identity. Existing DiMeTrans/CzEn Composer settings and backups are not migrated automatically. Disable those extensions when testing WebTranslatePlace on the same pages to avoid duplicate icons and shortcut conflicts.
 
 ## Build
 
 ```bash
-python3 scripts/build.py                 # all four targets
+python3 scripts/build.py                 # all five targets
 python3 scripts/build.py chrome firefox  # selected targets
 ```
 
@@ -26,6 +26,7 @@ Python 3 is the only build dependency. Edit `src/` and `manifests/`, then rebuil
 | Chrome/Chromium | `dist/chrome/` | `dist/webtranslateplace-chrome-0.1.0.zip` |
 | Firefox 142+ | `dist/firefox/` | `dist/webtranslateplace-firefox-0.1.0.zip` |
 | Safari | `dist/safari/` | `dist/webtranslateplace-safari-0.1.0.zip` |
+| Thunderbird 128+ | `dist/thunderbird/` | `dist/webtranslateplace-thunderbird-0.1.0.xpi` |
 | GNOME Web (experimental) | `dist/epiphany/` | `dist/webtranslateplace-epiphany-0.1.0.xpi` |
 
 Packages contain only runtime assets and use fixed ZIP metadata for reproducible builds.
@@ -41,11 +42,23 @@ Reload open pages after installing or updating. Browser internal pages and other
 
 Safari and GNOME Web are prepared build targets. Their installation, shortcut dispatch, frame focus, editor replacement, clipboard, API origins and permissions still require live testing on those browsers. Firefox/Chromium live page interaction also needs checking; API smoke tests are not browser UI tests.
 
+## Thunderbird
+
+Build with `python3 scripts/build.py thunderbird`. In Thunderbird, open **Add-ons and Themes**, use the gear menu's **Install Add-on From File**, and choose `dist/webtranslateplace-thunderbird-0.1.0.xpi`. For temporary development loading, use **Debug Add-ons → Load Temporary Add-on** and select `dist/thunderbird/manifest.json`.
+
+- **Writing an email:** select Czech text in the message body and press **Ctrl+Alt+S** (**Command+Option+S** on macOS). The completed English translation replaces only that selection after saving its original locally. Changed selections and drafts are left untouched. Both HTML and plain-text compose bodies are handled; subject and recipient fields are outside this integration.
+- **Reading an email:** select text in the message body and use the same shortcut. The Czech translation appears in a separate, closable panel. The original message stays intact, and the stored email is never modified. Only the selected text is sent to the API.
+- **Settings and originals:** use the extension button in the main, compose or message toolbar. API settings and the last 50 original draft selections are shared inside the Thunderbird installation. Discord controls are hidden; browser extension settings are not imported.
+
+Reopen message and compose windows after installing or updating so their scripts are loaded. Shortcut assignments can be changed through **Manage Extension Shortcuts** in the add-on manager. This target uses Manifest V2 and Thunderbird's [composeScripts](https://webextension-api.thunderbird.net/en/esr-mv2/composeScripts.html) and [messageDisplayScripts](https://webextension-api.thunderbird.net/en/esr-mv2/messageDisplayScripts.html) APIs. The `compose` and `messagesModify` permissions allow scripts in the respective message bodies; HTTP/HTTPS permissions allow connecting to the configured API. No account enumeration, message database access or automatic sending is used.
+
+Automated tests cover script registration, received-message translation, compose replacement and XPI packaging. Live Thunderbird interaction with real mail, focus, shortcut dispatch, undo and clipboard still needs verification.
+
 ## Connect an API
 
 The default API is `http://127.0.0.1:5001`. Click the toolbar icon, set **Adresa překladového API** and save. Use the base URL without `/translate`; HTTP, HTTPS, ports and path prefixes such as `https://example.com/api` are supported. Credentials, query parameters and fragments are rejected. Both features use the same saved address. Running jobs keep their original server; the next translation uses the new setting. **Výchozí adresa** restores the default.
 
-The manifest requests access to all URLs so selection translation can run in editors across websites and the background can reach your configured API. HTTP/HTTPS access is already covered by this required permission, so changing the API address does not request additional permissions. The extension sends only Discord messages you translate and editor selections you explicitly request, using the configured server. There is no analytics or telemetry. Draft backups stay in local extension storage, are not synced or encrypted, and disappear when the extension is uninstalled. Each backup records the original text, timestamp and site hostname. Browser-granted site restrictions still apply.
+The manifest requests access to all URLs so selection translation can run in editors across websites and the background can reach your configured API. HTTP/HTTPS access is already covered by this required permission, so changing the API address does not request additional permissions. The extension sends only Discord messages, email selections and editor selections you explicitly request, using the configured server. There is no analytics or telemetry. Draft backups stay in local extension storage, are not synced or encrypted, and disappear when the extension is uninstalled. Each backup records the original text, timestamp and site hostname. Browser-granted site restrictions still apply.
 
 A compatible server must provide:
 

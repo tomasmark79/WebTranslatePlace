@@ -9,7 +9,7 @@ import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGETS = ("chrome", "firefox", "safari", "epiphany")
+TARGETS = ("chrome", "firefox", "safari", "epiphany", "thunderbird")
 RUNTIME_FILES = (
     "background.js", "content.js", "selection.js", "api-settings.js", "popup.js", "popup.html", "popup.css",
     "icons/icon16.png", "icons/icon32.png", "icons/icon48.png", "icons/icon128.png",
@@ -19,30 +19,36 @@ RUNTIME_FILES = (
 def make_manifest(target):
     manifest = json.loads((ROOT / "manifests/base.json").read_text(encoding="utf-8"))
     manifest.update(json.loads((ROOT / "manifests" / f"{target}.json").read_text(encoding="utf-8")))
-    if target == "epiphany":
+    if target in ("epiphany", "thunderbird"):
         manifest["permissions"] += manifest.pop("host_permissions")
         manifest["browser_action"] = manifest.pop("action")
+    if target == "thunderbird":
+        manifest.pop("content_scripts")
+        manifest["compose_action"] = manifest["browser_action"].copy()
+        manifest["message_display_action"] = manifest["browser_action"].copy()
     return manifest
 
 
 def build(target, output_root):
     manifest = make_manifest(target)
+    runtime_files = RUNTIME_FILES + (("thunderbird-background.js", "thunderbird-compose.js", "thunderbird-message.js")
+                                     if target == "thunderbird" else ())
     output_root.mkdir(parents=True, exist_ok=True)
     output = output_root / target
     # Recreate only this generated target, so removed sources cannot linger.
     with tempfile.TemporaryDirectory(prefix=f".{target}-", dir=output_root) as staging:
         stage = Path(staging)
-        for name in RUNTIME_FILES:
+        for name in runtime_files:
             destination = stage / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / "src" / name, destination)
         (stage / "manifest.json").write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
-        suffix = "xpi" if target == "epiphany" else "zip"
+        suffix = "xpi" if target in ("epiphany", "thunderbird") else "zip"
         package = output_root / f'webtranslateplace-{target}-{manifest["version"]}.{suffix}'
         with ZipFile(package, "w", ZIP_DEFLATED) as archive:
-            for name in sorted(("manifest.json", *RUNTIME_FILES)):
+            for name in sorted(("manifest.json", *runtime_files)):
                 # Fixed metadata makes identical sources produce identical archives.
                 info = ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
                 info.compress_type = ZIP_DEFLATED
@@ -57,7 +63,7 @@ def build(target, output_root):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("targets", nargs="*", metavar="TARGET",
-                        help="chrome, firefox, safari or epiphany (default: all)")
+                        help="chrome, firefox, safari, epiphany or thunderbird (default: all)")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "dist",
                         help="Directory for generated extensions and archives")
     args = parser.parse_args()
