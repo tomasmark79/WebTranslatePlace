@@ -1,0 +1,95 @@
+# WebTranslatePlace
+
+WebTranslatePlace combines Discord message translation with Czech-to-English draft translation in one browser extension. It uses shared sources for Chrome/Chromium (including Edge, Brave and other Chromium browsers), Firefox, Safari and GNOME Web (Epiphany).
+
+- **Discord messages → Czech:** click the translation icon beside a message. Translation appears progressively; click again to restore the original. The icon pulses only while translating and shows a static blue check mark after completion, including when viewing the original. Original colors and typography are preserved. Messages being edited and the composer are excluded.
+- **Selected Czech draft → English:** select text in a text input, textarea or contenteditable editor and press **Ctrl+Alt+S in Firefox** (**Command+Option+S** on macOS), or **Shift+Alt+S** in other browsers (**Shift+Option+S** on macOS). This includes Discord's composer. The extension waits for the complete translation, replaces only the selected text, and never sends the message.
+- **Recover originals:** click the toolbar icon to copy or delete the last 50 selected drafts, saved locally before translation starts. The same window configures the API for both features.
+
+Discord translation support is enabled by default. Use **Podpora překladu Discordu** in the popup to turn it off or on. The setting is saved locally and applies to open Discord tabs immediately. Turning it off removes message translation icons and restores original messages; selected-draft translation remains available, including in Discord's composer.
+
+If a draft or its selection changes while translation runs, the extension leaves it alone. Password, disabled and read-only fields are ignored. If saving the original fails, translation does not start. Selections outside editable fields are not translated.
+
+This is a browser client; it includes no server or language model. It is a new extension with its own storage and identity. Existing DiMeTrans/CzEn Composer settings and backups are not migrated automatically. Disable those extensions when testing WebTranslatePlace on the same pages to avoid duplicate icons and shortcut conflicts.
+
+## Build
+
+```bash
+python3 scripts/build.py                 # all four targets
+python3 scripts/build.py chrome firefox  # selected targets
+```
+
+Python 3 is the only build dependency. Edit `src/` and `manifests/`, then rebuild; `dist/` is generated. `manifests/base.json` contains the shared version, permissions and entry points. Target overlays select browser-specific background implementations. Open `WebTranslatePlace.code-workspace` in VS Code to use the default build task.
+
+| Target | Unpacked extension | Package |
+| --- | --- | --- |
+| Chrome/Chromium | `dist/chrome/` | `dist/webtranslateplace-chrome-0.1.0.zip` |
+| Firefox 142+ | `dist/firefox/` | `dist/webtranslateplace-firefox-0.1.0.zip` |
+| Safari | `dist/safari/` | `dist/webtranslateplace-safari-0.1.0.zip` |
+| GNOME Web (experimental) | `dist/epiphany/` | `dist/webtranslateplace-epiphany-0.1.0.xpi` |
+
+Packages contain only runtime assets and use fixed ZIP metadata for reproducible builds.
+
+## Install
+
+- **Chrome/Chromium:** open `chrome://extensions/`, enable **Developer mode**, choose **Load unpacked** and select `dist/chrome/`. Manage the shortcut at `chrome://extensions/shortcuts`. For local files, enable **Allow access to file URLs** in the extension details.
+- **Firefox:** open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on** and select `dist/firefox/manifest.json`. Grant access to the pages where you want to translate. Temporary installation ends when Firefox exits; permanent installation needs a [Mozilla-signed package](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/). The default shortcut is **Ctrl+Alt+S** (Command+Option+S on macOS). This shortcut can be pressed with the left hand; the popup displays the actual assigned binding. Manage the shortcut through **Manage Extension Shortcuts** in `about:addons`. After updating an existing installation, check this setting if the previous shortcut remains assigned.
+- **Safari:** on macOS with Xcode, run `bash scripts/package-safari.sh`, build/run `SafariProject/` in Xcode and enable the extension with access to the desired sites. The ZIP is input to Apple's tool, not a directly installable Safari add-on. See [Apple's packaging documentation](https://developer.apple.com/documentation/safariservices/packaging-a-web-extension-for-safari).
+- **GNOME Web (experimental):** enable experimental WebExtensions support and import the XPI through the extension manager. This target uses Manifest V2 with a persistent background script. Because Epiphany's WebExtensions support is experimental, this extension variant is experimental too. Epiphany 50.6 testing encountered browser crashes, failed extension messaging and crashes during removal; working translation is not confirmed. See [known limitations](docs/epiphany.md).
+
+Reload open pages after installing or updating. Browser internal pages and other protected pages cannot run the selection content script; see [Mozilla's content-script documentation](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Content_scripts). The popup displays the actual assigned shortcut when the browser supports `commands.getAll()`. Browser or OS shortcut conflicts can be resolved in the extension shortcut manager.
+
+Safari and GNOME Web are prepared build targets. Their installation, shortcut dispatch, frame focus, editor replacement, clipboard, API origins and permissions still require live testing on those browsers. Firefox/Chromium live page interaction also needs checking; API smoke tests are not browser UI tests.
+
+## Connect an API
+
+The default API is `http://127.0.0.1:5001`. Click the toolbar icon, set **Adresa překladového API** and save. Use the base URL without `/translate`; HTTP, HTTPS, ports and path prefixes such as `https://example.com/api` are supported. Credentials, query parameters and fragments are rejected. Both features use the same saved address. Running jobs keep their original server; the next translation uses the new setting. **Výchozí adresa** restores the default.
+
+The manifest requests access to all URLs so selection translation can run in editors across websites and the background can reach your configured API. HTTP/HTTPS access is already covered by this required permission, so changing the API address does not request additional permissions. The extension sends only Discord messages you translate and editor selections you explicitly request, using the configured server. There is no analytics or telemetry. Draft backups stay in local extension storage, are not synced or encrypted, and disappear when the extension is uninstalled. Each backup records the original text, timestamp and site hostname. Browser-granted site restrictions still apply.
+
+A compatible server must provide:
+
+| Request | Response |
+| --- | --- |
+| `GET /health` | JSON including `status: "ready"` for diagnostics. |
+| `POST /translate` with `{ "q": "Hello", "source": "auto", "target": "cs" }` for Discord, or `{ "q": "Ahoj", "source": "cs", "target": "en" }` for drafts | HTTP 202, `{ "jobId": "<32 lowercase hex characters>", "status": "pending" }`. |
+| `GET /translations/<jobId>` | `{ "status": "pending", "partialText": "..." }`, `{ "status": "done", "translatedText": "..." }`, or `{ "status": "failed", "error": "..." }`. |
+
+Polling runs every 500 ms for up to 180 seconds. Partial text is optional and displayed only for Discord messages. The server must accept extension-origin requests; startup, model installation and GPU configuration depend on your backend. Keep a local API on loopback unless you have secured another deployment.
+
+```bash
+curl http://127.0.0.1:5001/health
+curl -H 'Content-Type: application/json' \
+  -d '{"q":"Ahoj","source":"cs","target":"en"}' \
+  http://127.0.0.1:5001/translate
+```
+
+Use the returned `jobId` with `GET /translations/<jobId>`.
+
+## Development and checks
+
+The Discord script is loaded only on `discord.com`, `canary.discord.com` and `ptb.discord.com`, in the top frame. It also checks the host before starting, and the background accepts its message protocol only from these hosts. Other websites load only the selection script: it registers a message listener and does no DOM scanning, observation, timers or API requests until you invoke translation.
+
+Discord updates are driven by relevant DOM changes, scrolling, resizing and returning to the tab, coalesced over 150 ms. There is no periodic page scan. Hidden tabs disconnect their observer and do not schedule scans or start more automatic translations; already requested jobs can finish. Disabling the translator or invalidating its context disconnects its observer and listeners. The translation cache retains at most 200 entries per tab, and processed message IDs are pruned as Discord removes their DOM nodes. Background startup does not load or rewrite Discord state; it is read when Discord asks for it.
+
+`src/content.js` contains Discord rendering and progressive translation; `src/selection.js` contains editor selection and safe replacement. `src/background.js` handles both message protocols, keyboard commands, API requests and serialized draft backups. The popup contains shared API settings and backup recovery.
+
+Discord defaults to manual translation. To enable automatic translation of visible messages, change `MANUAL_TRANSLATION` in `src/content.js` and rebuild. Its source/target language constants apply to messages only; selected drafts use Czech → English.
+
+```bash
+node --test tests/*.test.cjs
+WEBTRANSLATEPLACE_API_NAMESPACE=browser node --test tests/*.test.cjs
+python3 -m unittest discover -s tests -p 'test_*.py'
+npx --yes web-ext lint --source-dir dist/firefox --warnings-as-errors
+```
+
+Tests cover selection replacement, Slate editor events, changed-draft protection, password exclusion, backup failures and recovery, shortcut dispatch, shared API settings, job server retention, Discord rendering and coexistence of both scripts. Package tests check runtime bytes, entry points, browser manifests, reproducibility and stale-file cleanup.
+
+With a compatible server running:
+
+```bash
+node tests/live-translation.cjs chrome
+node tests/live-translation.cjs firefox
+```
+
+These exercise both translation directions using real HTTP and simulated extension Origin headers. Set `WEBTRANSLATEPLACE_API_URL` for another server. They do not install extensions or verify browser UI behavior.

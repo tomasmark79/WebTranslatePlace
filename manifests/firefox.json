@@ -1,0 +1,27 @@
+{
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "webtranslateplace@tomasmark79",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": [
+          "personalCommunications"
+        ]
+      }
+    }
+  },
+  "commands": {
+    "translate-selection": {
+      "suggested_key": {
+        "default": "Ctrl+Alt+S",
+        "mac": "Command+Alt+S"
+      },
+      "description": "Translate selected Czech text into English"
+    }
+  }
+}
