@@ -86,6 +86,29 @@ test('čekání na překlad má konečný limit', async () => {
   await assert.rejects(context.service.translate('Hello'), /Translation timed out/);
 });
 
+test('Discord waits for a four-minute translation and stops at fifteen minutes', async () => {
+  for (const completes of [true, false]) {
+    const { context } = load([]);
+    let elapsed = 0;
+    context.Date = { now: () => elapsed };
+    context.config.POLL_INTERVAL_MS = 500;
+    context.setTimeout = (callback, ms) => { elapsed += ms; callback(); };
+    context[apiNamespace].runtime.sendMessage = async message => {
+      const path = JSON.parse(message).args[0];
+      return JSON.stringify(envelope(path.endsWith('/translate') ? job
+        : completes && elapsed >= 240000
+          ? { status: 'done', translatedText: 'Long translation' } : job));
+    };
+    if (completes) {
+      assert.equal(await context.service.translate('Long text'), 'Long translation');
+      assert.equal(elapsed, 240000);
+    } else {
+      await assert.rejects(context.service.translate('Long text'), /Translation timed out/);
+      assert.equal(elapsed, 900000);
+    }
+  }
+});
+
 test('chyba ručního překladu umožní opakování a neuloží chybu do cache', async () => {
   const { context } = load([]);
   const translator = Object.create(context.Translator.prototype);

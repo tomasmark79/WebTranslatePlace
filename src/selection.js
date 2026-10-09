@@ -3,7 +3,7 @@
 
 const selectionApi = globalThis.browser ?? globalThis.chrome;
 const POLL_INTERVAL_MS = 500;
-const TRANSLATION_TIMEOUT_MS = 180000;
+const TRANSLATION_TIMEOUT_MS = 15 * 60 * 1000;
 const TEXT_INPUT_TYPES = new Set(['text', 'search']);
 let translating = false;
 

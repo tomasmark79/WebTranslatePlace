@@ -81,6 +81,10 @@ curl -H 'Content-Type: application/json' \
 
 Use the returned `jobId` with `GET /translations/<jobId>`.
 
+Translations can take several minutes. Discord, editable selections and Thunderbird
+wait up to fifteen minutes per translation, including queue time. Each HTTP request
+still has a fifteen-second timeout so an unreachable server is reported promptly.
+
 ## Development and checks
 
 The Discord script is loaded only on `discord.com`, `canary.discord.com` and `ptb.discord.com`, in the top frame. It also checks the host before starting, and the background accepts its message protocol only from these hosts. Other websites load only the selection script: it registers a message listener and does no DOM scanning, observation, timers or API requests until you invoke translation.

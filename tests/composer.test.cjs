@@ -89,6 +89,28 @@ function textarea(value, start = 0, end = value.length) {
   };
 }
 
+test('Selection translation supports four minutes and times out after fifteen', async () => {
+  for (const completes of [true, false]) {
+    const { context } = loadContent(textarea('Long text'));
+    let elapsed = 0;
+    context.Date = { now: () => elapsed };
+    context.setTimeout = (callback, ms) => { elapsed += ms; callback(); };
+    context[apiNamespace].runtime.sendMessage = async message => ({ ok: true, body:
+      message.path === '/translate' ? { status: 'pending', jobId: JOB_ID }
+        : completes && elapsed >= 240000
+          ? { status: 'done', translatedText: 'Long translation' } : { status: 'pending' }
+    });
+    const pending = vm.runInContext("translate('Long text', 'en')", context);
+    if (completes) {
+      assert.equal(await pending, 'Long translation');
+      assert.equal(elapsed, 240000);
+    } else {
+      await assert.rejects(pending, /Translation timed out/);
+      assert.equal(elapsed, 900000);
+    }
+  }
+});
+
 test('Ctrl+A vybere český text a dokončený překlad ho nahradí bez odeslání', async () => {
   const field = textarea('Ahoj světe');
   const { context, calls, backups, notices } = loadContent(field, [

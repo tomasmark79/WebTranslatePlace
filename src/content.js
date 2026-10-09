@@ -34,7 +34,7 @@ const CONFIG = {
   UPDATE_DEBOUNCE_MS: 150,            // Coalesce message/scroll changes
   MAX_CACHE_ENTRIES: 200,             // Bound retained translations per tab
   TRANSLATION_API_URL: 'http://127.0.0.1:5001', // Default; overridden by extension settings
-  TRANSLATION_TIMEOUT_MS: 180000,      // Total timeout including queue time
+  TRANSLATION_TIMEOUT_MS: 15 * 60 * 1000, // Total timeout including queue time
   POLL_INTERVAL_MS: 500,
 
   // UI settings
