@@ -89,6 +89,77 @@ function textarea(value, start = 0, end = value.length) {
   };
 }
 
+function pageSelection() {
+  const h = loadContent({ tagName: 'BODY', isContentEditable: false }, [
+    { ok: true, body: { status: 'done', jobId: JOB_ID, translatedText: '<b>Hello</b>' } }
+  ]);
+  const node = {
+    nodeType: 3, data: 'Before Ahoj after', isConnected: true,
+    parentElement: { closest: () => null },
+    replaceData(start, count, text) {
+      this.data = this.data.slice(0, start) + text + this.data.slice(start + count);
+    }
+  };
+  const range = {
+    startContainer: node, endContainer: node, startOffset: 7, endOffset: 11,
+    cloneRange() { return { ...this }; }
+  };
+  const selection = {
+    isCollapsed: false, rangeCount: 1, getRangeAt: () => range,
+    toString: () => node.data.slice(range.startOffset, range.endOffset)
+  };
+  h.context.window.getSelection = () => selection;
+  h.document.execCommand = () => { throw new Error('Page text is not an editor'); };
+  return { ...h, node, range, selection };
+}
+
+test('Page selection replaces only selected characters as plain text and saves history', async () => {
+  for (const secondary of [false, true]) {
+    const h = pageSelection();
+    h.context[apiNamespace].storage.local.get = async () => ({
+      translationTarget: 'en', secondaryTranslationTarget: 'cs'
+    });
+    await vm.runInContext(`translateSelection(${secondary})`, h.context);
+    assert.equal(h.node.data, 'Before <b>Hello</b> after');
+    assert.deepEqual(h.backups, ['Ahoj']);
+    assert.equal(h.completedBackups[0].translatedText, '<b>Hello</b>');
+    assert.equal(h.calls[0].body.target, secondary ? 'cs' : 'en');
+    assert.equal(h.notices.length, 0);
+  }
+});
+
+test('Page translation leaves changed text, moved selections and detached nodes alone', async () => {
+  for (const change of [
+    h => { h.node.data = 'Updated page content'; },
+    h => { h.range.startOffset = 8; },
+    h => { h.node.isConnected = false; },
+    h => { h.selection.rangeCount = 0; },
+    h => { h.document.hasFocus = () => false; }
+  ]) {
+    const h = pageSelection();
+    h.context.translate = async () => { change(h); return 'Hello'; };
+    await vm.runInContext('translateSelection()', h.context);
+    assert.ok(['Before Ahoj after', 'Updated page content'].includes(h.node.data));
+    assert.match(h.notices[0].textContent, /The selection changed during translation/);
+  }
+});
+
+test('Page selections crossing nodes or inside excluded elements never start translation', async () => {
+  for (const change of [
+    h => { h.range.endContainer = { nodeType: 3 }; },
+    h => { h.node.nodeType = 1; },
+    h => { h.node.parentElement.closest = () => ({}); },
+    h => { h.context.WTP_COMPOSE = true; }
+  ]) {
+    const h = pageSelection();
+    change(h);
+    await vm.runInContext('translateSelection()', h.context);
+    assert.equal(h.node.data, 'Before Ahoj after');
+    assert.equal(h.calls.length, 0);
+    assert.equal(h.backups.length, 0);
+  }
+});
+
 test('Selection translation supports four minutes and times out after fifteen', async () => {
   for (const completes of [true, false]) {
     const { context } = loadContent(textarea('Long text'));

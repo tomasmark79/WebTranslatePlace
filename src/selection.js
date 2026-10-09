@@ -26,14 +26,26 @@ function selectedText() {
     return { kind: 'control', element: active, start, end, value: active.value,
       text: active.value.slice(start, end) };
   }
-  if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' ||
-      (active.isContentEditable === false && !(globalThis.WTP_COMPOSE && document.designMode === 'on'))) return null;
+  if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') return null;
 
   const editor = active.closest?.('[contenteditable="true"], [contenteditable="plaintext-only"]') ||
     (globalThis.WTP_COMPOSE && document.designMode === 'on' ? document.body : null);
   const selection = window.getSelection();
-  if (!editor || !selection || selection.isCollapsed || selection.rangeCount !== 1) return null;
+  if (!selection || selection.isCollapsed || selection.rangeCount !== 1) return null;
   const range = selection.getRangeAt(0).cloneRange();
+  if (!editor) {
+    if (globalThis.WTP_COMPOSE) return null;
+    const node = range.startContainer;
+    // Only replace characters in one text node: never remove HTML, links or
+    // formatting, and never treat a non-editable part of an editor as page text.
+    if (node.nodeType !== 3 || node !== range.endContainer ||
+        !node.parentElement || node.parentElement.closest(
+          'input, textarea, [contenteditable], script, style, noscript, template, svg, math'
+        )) return null;
+    return { kind: 'page', node, range, text: selection.toString(), value: node.data };
+  }
+  if (active.isContentEditable === false &&
+      !(globalThis.WTP_COMPOSE && document.designMode === 'on')) return null;
   if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) return null;
   return { kind: 'editable', editor, range, text: selection.toString(),
     editorText: editor.textContent };
@@ -49,10 +61,13 @@ function selectionUnchanged(snapshot) {
   }
   const { editor, range } = snapshot;
   const selection = window.getSelection();
-  if (!editor.isConnected || !editor.contains(active) ||
+  if (snapshot.kind === 'page') {
+    if (!snapshot.node.isConnected || snapshot.node.data !== snapshot.value) return false;
+  } else if (!editor.isConnected || !editor.contains(active) ||
       editor.textContent !== snapshot.editorText || !selection || selection.rangeCount !== 1) {
     return false;
   }
+  if (!selection || selection.rangeCount !== 1) return false;
   const current = selection.getRangeAt(0);
   return current.startContainer === range.startContainer && current.startOffset === range.startOffset &&
     current.endContainer === range.endContainer && current.endOffset === range.endOffset &&
@@ -62,6 +77,11 @@ function selectionUnchanged(snapshot) {
 async function replaceSelection(snapshot, translated) {
   if (!selectionUnchanged(snapshot)) {
     throw new Error('The selection changed during translation. The original text was kept.');
+  }
+  if (snapshot.kind === 'page') {
+    const { node, range } = snapshot;
+    node.replaceData(range.startOffset, range.endOffset - range.startOffset, translated);
+    return;
   }
   if (snapshot.kind === 'editable' && snapshot.editor.matches?.('[data-slate-editor]')) {
     // Slate keeps message content in its own model. A direct DOM change would only
@@ -143,7 +163,9 @@ async function translateSelection(secondary = false) {
   }
   const snapshot = selectedText();
   if (!snapshot?.text.trim()) {
-    if (activeEditor()?.tagName !== 'IFRAME') showNotice('Select some text in the editor first.');
+    if (activeEditor()?.tagName !== 'IFRAME') {
+      showNotice('Select text in an editor or a single passage on the page, without crossing links or formatting.');
+    }
     return;
   }
   if (snapshot.text.length > 10000) {
