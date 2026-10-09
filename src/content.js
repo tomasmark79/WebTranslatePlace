@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Tomáš Mark
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 const extensionApi = globalThis.browser ?? globalThis.chrome;
 
 /**

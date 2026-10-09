@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Tomáš Mark
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 const selectionApi = globalThis.browser ?? globalThis.chrome;
 const POLL_INTERVAL_MS = 500;
 const TRANSLATION_TIMEOUT_MS = 180000;

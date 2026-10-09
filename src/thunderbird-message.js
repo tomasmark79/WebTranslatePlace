@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Tomáš Mark
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 globalThis.WTP_READ_MESSAGE = true;
 
 async function translateReceivedSelection(secondary = false) {

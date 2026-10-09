@@ -38,6 +38,7 @@ def build(target, output_root):
     # Recreate only this generated target, so removed sources cannot linger.
     with tempfile.TemporaryDirectory(prefix=f".{target}-", dir=output_root) as staging:
         stage = Path(staging)
+        shutil.copyfile(ROOT / "LICENSE", stage / "LICENSE")
         for name in runtime_files:
             destination = stage / name
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -48,7 +49,7 @@ def build(target, output_root):
         suffix = "xpi" if target in ("epiphany", "thunderbird") else "zip"
         package = output_root / f'webtranslateplace-{target}-{manifest["version"]}.{suffix}'
         with ZipFile(package, "w", ZIP_DEFLATED) as archive:
-            for name in sorted(("manifest.json", *runtime_files)):
+            for name in sorted(("manifest.json", "LICENSE", *runtime_files)):
                 # Fixed metadata makes identical sources produce identical archives.
                 info = ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
                 info.compress_type = ZIP_DEFLATED

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Tomáš Mark
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Editors can put invisible placeholders on otherwise empty lines. Keep line
 // breaks and spaces, but do not send placeholder-only chunks to the model.
 function normalizeTranslationBody(body) {

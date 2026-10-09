@@ -24,7 +24,7 @@ class BuildTests(unittest.TestCase):
 
     def test_all_packages_share_runtime_and_have_valid_entry_points(self):
         self.build()
-        expected_files = {"manifest.json", "background.js", "content.js", "selection.js", "api-settings.js",
+        expected_files = {"manifest.json", "LICENSE", "background.js", "content.js", "selection.js", "api-settings.js",
                           "popup.js", "popup.html", "popup.css", "icons/icon16.png", "icons/icon32.png",
                           "icons/icon48.png", "icons/icon128.png"}
         self.assertEqual(len(list(self.output.glob("webtranslateplace-*"))), 5)
@@ -38,7 +38,9 @@ class BuildTests(unittest.TestCase):
                     self.assertEqual(set(archive.namelist()), expected_files)
                     for name in expected_files:
                         self.assertEqual(archive.read(name), (directory / name).read_bytes())
-                        if name != "manifest.json":
+                        if name == "LICENSE":
+                            self.assertEqual(archive.read(name), (ROOT / name).read_bytes())
+                        elif name != "manifest.json":
                             self.assertEqual(archive.read(name), (ROOT / "src" / name).read_bytes())
                 action = manifest.get("action", manifest.get("browser_action"))
                 self.assertTrue((directory / action["default_popup"]).is_file())
@@ -92,6 +94,7 @@ class BuildTests(unittest.TestCase):
         archive_path = next(self.output.glob("*thunderbird*.xpi"))
         with ZipFile(archive_path) as archive:
             self.assertIsNone(archive.testzip())
+            self.assertEqual(archive.read("LICENSE"), (ROOT / "LICENSE").read_bytes())
             for name in archive.namelist():
                 self.assertEqual(archive.read(name), (directory / name).read_bytes())
             for name in manifest["background"]["scripts"]:

@@ -110,3 +110,8 @@ node tests/live-translation.cjs firefox
 These exercise both translation directions using real HTTP and simulated extension Origin headers. Set `WEBTRANSLATEPLACE_API_URL` for another server. They do not install extensions or verify browser UI behavior.
 
 TranslatePlace has two independent commands: **TranslatePlace: translate into language 1** and **TranslatePlace: translate into language 2**. Language 1 retains the existing shortcut. Language 2 starts without an assigned shortcut; assign it in the browser extension manager (Chrome: `chrome://extensions/shortcuts`, Firefox/Thunderbird: **Manage Extension Shortcuts**). The popup displays the actual shortcuts for both commands. Both commands detect the source automatically and save the chosen target with draft history.
+
+## License
+
+WebTranslatePlace is licensed under the GNU General Public License, version 3 or
+any later version (SPDX: `GPL-3.0-or-later`). See [LICENSE](LICENSE).
