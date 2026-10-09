@@ -66,4 +66,14 @@ vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../src/sel
   assert.ok(translated.trim());
   assert.notEqual(translated, draft);
   console.log(JSON.stringify({ draft, translated }));
+  const sentence = 'Že by to detekovalo jazyk a ten pak přeložilo do angličtiny?';
+  for (const suffix of ['\n ', '\n \uFEFF', '\n \u200B']) {
+    const input = sentence + suffix;
+    const result = await selection.translateDraft(input);
+    assert.ok(result.trim());
+    assert.match(result, /English/i);
+    assert.ok(result.endsWith('\n '), 'Keep the trailing line break and space');
+    assert.ok(!result.includes('\uFEFF') && !result.includes('\u200B'));
+    console.log(JSON.stringify({ input, translated: result }));
+  }
 })().catch(error => { console.error(error); process.exitCode = 1; });

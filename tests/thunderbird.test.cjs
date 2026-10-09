@@ -80,12 +80,16 @@ test('Thunderbird designMode compose selection saves original and uses native ed
   const messages = [];
   h.context.browser.runtime.sendMessage = async request => {
     messages.push(request);
-    if (request.type === 'backup-save') return { ok: true };
+    if (request.type === 'backup-save') return { ok: true, id: 'mail-draft' };
+    if (request.type === 'backup-complete') return { ok: true, saved: true };
     return { ok: true, body: { jobId: 'a'.repeat(32), status: 'done', translatedText: 'Hello' } };
   };
   await vm.runInContext('translateSelection()', h.context);
   assert.equal(messages[0].type, 'backup-save');
   assert.equal(messages[0].text, 'Ahoj');
   assert.equal(messages[1].body.target, 'en');
+  assert.equal(messages[2].type, 'backup-complete');
+  assert.equal(messages[2].id, 'mail-draft');
+  assert.equal(messages[2].translatedText, 'Hello');
   assert.equal(body.textContent, 'Hello');
 });

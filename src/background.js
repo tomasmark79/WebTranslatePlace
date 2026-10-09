@@ -1,3 +1,13 @@
+// Editors can put invisible placeholders on otherwise empty lines. Keep line
+// breaks and spaces, but do not send placeholder-only chunks to the model.
+function normalizeTranslationBody(body) {
+  if (typeof body?.q !== 'string') return body;
+  const q = body.q.split(/(\r\n|\r|\n)/).map(part =>
+    /^[\s\u200B\uFEFF]*$/u.test(part) ? part.replace(/[\u200B\uFEFF]/g, '') : part
+  ).join('');
+  return { ...body, q };
+}
+
 // Selection translation, command dispatch and local draft backups.
 (() => {
 const composerApi = globalThis.browser ?? globalThis.chrome;
@@ -7,11 +17,11 @@ const API_SETTINGS = {
   normalize(value) {
     let url;
     try { url = new URL(value.trim()); } catch {
-      throw new Error('Zadej platnou adresu API včetně http:// nebo https://.');
+      throw new Error('Enter a valid API URL including http:// or https://.');
     }
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
         url.search || url.hash) {
-      throw new Error('Adresa API musí být HTTP/HTTPS bez přihlašovacích údajů, parametrů a fragmentu.');
+      throw new Error('The API URL must use HTTP/HTTPS without credentials, query parameters or fragments.');
     }
     return url.href.replace(/\/+$/, '');
   },
@@ -47,7 +57,7 @@ async function backupMessage(message, sender) {
     const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY]);
     const entries = stored[BACKUPS_KEY] || [];
     if (message.type === 'settings-save') {
-      if (!validHistoryLimit(message.limit)) throw new Error('Zadej celé číslo od 1 do 1 000.');
+      if (!validHistoryLimit(message.limit)) throw new Error('Enter a whole number from 1 to 1,000.');
       const apiUrl = API_SETTINGS.normalize(message.apiUrl);
       await composerApi.storage.local.set({
         [API_SETTINGS.key]: apiUrl,
@@ -58,9 +68,9 @@ async function backupMessage(message, sender) {
     }
     if (message.type === 'backup-save') {
       if (typeof message.text !== 'string' || !message.text.trim() ||
-          message.text.length > 10000) throw new Error('Neplatný text pro zálohu.');
+          message.text.length > 10000) throw new Error('Invalid text for backup.');
       let site = '';
-      try { site = new URL(sender.url).hostname; } catch { /* Rámec bez běžné URL. */ }
+      try { site = new URL(sender.url).hostname; } catch { /* Frame without a regular URL. */ }
       const entry = {
         id: crypto.randomUUID(), text: message.text, site,
         createdAt: Date.now()
@@ -69,11 +79,25 @@ async function backupMessage(message, sender) {
       return { ok: true, id: entry.id };
     }
     if (message.type === 'backup-delete') {
-      if (typeof message.id !== 'string') throw new Error('Neplatné ID zálohy.');
+      if (typeof message.id !== 'string') throw new Error('Invalid backup ID.');
       await composerApi.storage.local.set({
         [BACKUPS_KEY]: entries.filter(entry => entry.id !== message.id)
       });
       return { ok: true };
+    }
+    if (message.type === 'backup-complete') {
+      if (typeof message.id !== 'string' || typeof message.translatedText !== 'string' ||
+          !message.translatedText.trim() || message.translatedText.length > 100000) {
+        throw new Error('Invalid translated text for history.');
+      }
+      // Never recreate entries removed by deletion or a lower history limit.
+      const index = entries.findIndex(entry => entry.id === message.id);
+      if (index === -1) return { ok: true, saved: false };
+      const updated = entries.map((entry, position) => position === index
+        ? { ...entry, translatedText: message.translatedText, completedAt: Date.now() }
+        : entry);
+      await composerApi.storage.local.set({ [BACKUPS_KEY]: updated });
+      return { ok: true, saved: true };
     }
     await composerApi.storage.local.set({ [BACKUPS_KEY]: [] });
     return { ok: true };
@@ -84,15 +108,15 @@ composerApi.commands.onCommand.addListener(async (command, tab) => {
   if (command !== 'translate-selection') return;
   const activeTab = tab || (await composerApi.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   if (activeTab?.id == null) return;
-  // Zpráva dorazí do všech rámců; překlad provede pouze rámec s aktivním editorem.
+  // The command reaches all frames; only the frame with the active editor translates.
   composerApi.tabs.sendMessage(activeTab.id, { type: 'translate-selection' }).catch(error => {
-    console.warn('[WebTranslatePlace] Na této stránce není editor dostupný:', error.message);
+    console.warn('[WebTranslatePlace] No editor is available on this page:', error.message);
   });
 });
 
 composerApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!['translation-request', 'backup-save', 'backup-list', 'backup-delete',
-        'backup-clear', 'settings-save'].includes(message?.type)) return;
+        'backup-clear', 'backup-complete', 'settings-save'].includes(message?.type)) return;
   (async () => {
     try {
       if (message.type !== 'translation-request') {
@@ -101,20 +125,20 @@ composerApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       const path = message.path;
       if (path !== '/translate' && !/^\/translations\/[a-f0-9]{32}$/.test(path)) {
-        throw new Error('Neplatná cesta překladového API.');
+        throw new Error('Invalid translation API path.');
       }
       const apiUrl = API_SETTINGS.normalize(message.apiUrl ?? await API_SETTINGS.load());
       const response = await fetch(apiUrl + path, {
         method: path === '/translate' ? 'POST' : 'GET',
         headers: { 'Content-Type': 'application/json' },
-        ...(path === '/translate' ? { body: JSON.stringify(message.body) } : {}),
+        ...(path === '/translate' ? { body: JSON.stringify(normalizeTranslationBody(message.body)) } : {}),
         signal: AbortSignal.timeout(15000)
       });
       const body = await response.json();
       sendResponse({ ok: response.ok, body });
     } catch (error) {
       const prefix = message.type === 'translation-request'
-        ? 'Překladový server není dostupný' : 'Úložiště původních textů není dostupné';
+        ? 'The translation server is unavailable' : 'History storage is unavailable';
       sendResponse({ ok: false, body: { error: `${prefix}: ${error.message}` } });
     }
   })();
@@ -228,13 +252,18 @@ extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
           let response;
           try {
+            const requestOptions = { ...options };
+            if (new URL(url).pathname.endsWith('/translate') &&
+                requestOptions.method === 'POST' && typeof requestOptions.body === 'string') {
+              requestOptions.body = JSON.stringify(normalizeTranslationBody(JSON.parse(requestOptions.body)));
+            }
             response = await fetch(url, {
-              ...options,
+              ...requestOptions,
               signal: AbortSignal.timeout(15000)
             });
           } catch (error) {
             const endpoint = new URL(url).origin;
-            throw new Error(`Spojení s ${endpoint} selhalo (${error.message}). Zkontroluj běh překladového serveru, adresu API v nastavení a oprávnění rozšíření v prohlížeči.`);
+            throw new Error(`Connection to ${endpoint} failed (${error.message}). Check the translation server, the API URL in settings and the extension permissions.`);
           }
           logger.log('📥 Fetch response status:', response.status, response.statusText);
 

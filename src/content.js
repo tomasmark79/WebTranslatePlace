@@ -31,9 +31,9 @@ const CONFIG = {
   UPDATE_DEBOUNCE_MS: 150,            // Coalesce message/scroll changes
   MAX_CACHE_ENTRIES: 200,             // Bound retained translations per tab
   TARGET_LANGUAGE: 'cs',              // Target language (Czech)
-  SOURCE_LANGUAGE: 'auto',            // Nebo pevně např. 'en' či 'eng_Latn'
+  SOURCE_LANGUAGE: 'auto',            // Or a fixed language such as 'en' or 'eng_Latn'
   TRANSLATION_API_URL: 'http://127.0.0.1:5001', // Default; overridden by extension settings
-  TRANSLATION_TIMEOUT_MS: 180000,      // Celková doba čekání včetně fronty
+  TRANSLATION_TIMEOUT_MS: 180000,      // Total timeout including queue time
   POLL_INTERVAL_MS: 500,
 
   // UI settings
@@ -101,7 +101,7 @@ const logger = {
 // ============================================================================
 
 class TranslationService {
-  /** Krátké požadavky nezablokují service worker při pomalém překladu na CPU. */
+  /** Short requests keep the service worker responsive during slow CPU translation. */
   static async request(path, body, apiUrl = CONFIG.TRANSLATION_API_URL) {
     const responseText = await extensionApi.runtime.sendMessage(JSON.stringify({
       type: 'fetch',
@@ -111,17 +111,17 @@ class TranslationService {
         ...(body === undefined ? {} : { body: JSON.stringify(body) })
       }]
     }));
-    if (!responseText) throw new Error('Překladový server neodpověděl.');
+    if (!responseText) throw new Error('The translation server did not respond.');
     const envelope = JSON.parse(responseText);
     if (envelope.error) throw new Error(envelope.error);
     let response;
     try {
       response = JSON.parse(envelope.text);
     } catch {
-      throw new Error('Překladový server vrátil neplatnou odpověď.');
+      throw new Error('The translation server returned an invalid response.');
     }
     if (!envelope.ok) {
-      throw new Error(response.error || `Chyba překladového serveru HTTP ${envelope.status}`);
+      throw new Error(response.error || `Translation server error: HTTP ${envelope.status}`);
     }
     return response;
   }
@@ -136,20 +136,20 @@ class TranslationService {
     }, apiUrl);
     const jobId = response.jobId;
     if (typeof jobId !== 'string' || !/^[a-f0-9]{32}$/.test(jobId)) {
-      throw new Error('Server nevrátil platné ID překladu.');
+      throw new Error('The server did not return a valid translation ID.');
     }
     while (response.status === 'pending') {
       if (typeof response.partialText === 'string' && response.partialText.trim()) {
         onProgress?.(response.partialText);
       }
-      if (Date.now() >= deadline) throw new Error('Vypršel čas na překlad. Zkus to znovu.');
+      if (Date.now() >= deadline) throw new Error('Translation timed out. Try again.');
       await delay(CONFIG.POLL_INTERVAL_MS);
       response = await this.request(`/translations/${jobId}`, undefined, apiUrl);
     }
-    if (response.status === 'failed') throw new Error(response.error || 'Překlad selhal.');
+    if (response.status === 'failed') throw new Error(response.error || 'Translation failed.');
     if (response.status !== 'done' || typeof response.translatedText !== 'string' ||
         !response.translatedText.trim()) {
-      throw new Error('Server nevrátil přeložený text.');
+      throw new Error('The server did not return translated text.');
     }
     return response.translatedText;
   }
@@ -404,7 +404,7 @@ class DiscordTranslator {
     logger.log(`  Manual Translation: ${CONFIG.MANUAL_TRANSLATION ? 'ON (flag icons)' : 'OFF (auto-translate)'}`);
     logger.log('='.repeat(60));
 
-    // Změna nastavení se projeví ve všech otevřených kartách Discordu.
+    // Apply setting changes to all open Discord tabs.
     const onSettingsChanged = (changes, area) => {
       if (area === 'local' && changes.translatorActive && !this.context?.isInvalid) {
         this.setActive(changes.translatorActive.newValue !== false);
@@ -683,7 +683,7 @@ class DiscordTranslator {
     if (this.currentChannelId !== newChannelId) {
       logger.log(`📺 Channel changed: ${this.currentChannelId || 'none'} → ${newChannelId}`);
 
-      // Při návratu kanálu může Discord původní uzly znovu použít.
+      // Discord may reuse the original nodes when returning to a channel.
       this.cleanupTranslations();
       // Clear processed messages (but keep translation cache for speed)
       this.processedMessages.clear();
@@ -717,8 +717,8 @@ class DiscordTranslator {
         let translationToRestore = null;
         if (previous && (previous.element !== messageElement ||
             !previous.translatedElement.isConnected)) {
-          // Více prvků uvnitř jedné zprávy může mít stejné ID. Dokud je původní
-          // překlad v DOM, další prvek nesmí přepnout zprávu zpět na originál.
+          // Several elements within one message can share an ID. While the existing
+          // translation is in the DOM, another element must not restore the original.
           if (previous.element !== messageElement && previous.element.isConnected &&
               previous.translatedElement.isConnected) {
             flagsSkipped++;
@@ -732,7 +732,7 @@ class DiscordTranslator {
           this.processedMessages.delete(messageId);
         } else if (previous?.showingTranslation &&
                    messageElement.style.getPropertyValue('display') !== 'none') {
-          // Discord může přepsat inline styl původního uzlu při vlastním renderu.
+          // Discord may overwrite the original node's inline style when rendering.
           this.setTranslationVisible(previous, true);
         }
         
@@ -804,8 +804,8 @@ class DiscordTranslator {
    * Check if message is being edited
    */
   isMessageBeingEdited(messageElement) {
-    // Text uvnitř editoru může mít stejnou třídu `markup` jako odeslaná
-    // zpráva. Nikdy ho nepovažuj za zprávu určenou k překladu.
+    // Text inside an editor may use the same `markup` class as a sent
+    // message. Never treat it as a message to translate.
     if (messageElement.closest?.('textarea, input, [contenteditable], [role="textbox"]')) {
       return true;
     }
@@ -1015,7 +1015,7 @@ class DiscordTranslator {
     
     const flagIcon = document.createElement('button');
     flagIcon.className = this.FLAG_ICON_CLASS;
-    flagIcon.title = 'Přeložit do češtiny';
+    flagIcon.title = 'Translate into Czech';
     flagIcon.setAttribute('aria-label', flagIcon.title);
     flagIcon.setAttribute('aria-pressed', 'false');
     flagIcon.setAttribute('data-message-id', messageId);
@@ -1049,14 +1049,14 @@ class DiscordTranslator {
     try {
       logger.log(`🔄 Translating message on demand [${messageId}]`);
       
-      // Další kliknutí pouze přepne zobrazení, znovu nevolá překladač.
+      // Further clicks only toggle visibility without calling the translator again.
       if (this.messageTranslations.has(messageId)) {
         this.toggleTranslation(messageId);
         return;
       }
 
       this.setFlagStatus(flagIcon, 'loading');
-      flagIcon.title = 'Překládám...';
+      flagIcon.title = 'Translating…';
       flagIcon.setAttribute('aria-label', flagIcon.title);
       
       // Extract text content
@@ -1064,7 +1064,7 @@ class DiscordTranslator {
       if (!textContent || textContent.trim().length === 0) {
         logger.debug(`⏭️ No text to translate [${messageId}]`);
         this.setFlagStatus(flagIcon, 'idle');
-        flagIcon.title = 'Žádný text k překladu';
+        flagIcon.title = 'No text to translate';
         flagIcon.setAttribute('aria-label', flagIcon.title);
         return;
       }
@@ -1112,7 +1112,7 @@ class DiscordTranslator {
       }
       logger.error(`❌ Error translating message [${messageId}]:`, error);
       this.setFlagStatus(flagIcon, 'error');
-      flagIcon.title = `Chyba při překladu: ${error.message}. Kliknutím zkus znovu.`;
+      flagIcon.title = `Translation error: ${error.message}. Click to retry.`;
       flagIcon.setAttribute('aria-label', flagIcon.title);
 
     }
@@ -1151,14 +1151,14 @@ class DiscordTranslator {
   }
 
   /**
-   * Zobrazí překlad na místě zprávy; původní uzel zůstává pro Discord nedotčený.
+   * Display the translation in place; keep the original node untouched for Discord.
    */
   displaySingleTranslation(messageElement, translatedText, messageId, flagIcon, complete = true) {
     if (!messageElement?.isConnected || !messageElement.parentElement) {
-      throw new Error('Zpráva už není na stránce.');
+      throw new Error('The message is no longer on the page.');
     }
     if (this.isMessageBeingEdited(messageElement)) {
-      throw new Error('Během úpravy zprávy nelze přepnout překlad.');
+      throw new Error('Cannot toggle the translation while editing the message.');
     }
     if (this.messageTranslations.has(messageId)) return;
 
@@ -1230,8 +1230,8 @@ class DiscordTranslator {
     if (state.icon) {
       this.setFlagStatus(state.icon, state.complete ? 'done' : 'loading');
       state.icon.classList.toggle('translated', showTranslation);
-      state.icon.title = showTranslation ? 'Zobrazit originál' :
-        (state.complete ? 'Zobrazit překlad' : 'Zobrazit rozpracovaný překlad');
+      state.icon.title = showTranslation ? 'Show original' :
+        (state.complete ? 'Show translation' : 'Show partial translation');
       state.icon.setAttribute('aria-label', state.icon.title);
       state.icon.setAttribute('aria-pressed', String(showTranslation));
     }
@@ -1281,7 +1281,7 @@ class DiscordTranslator {
   }
 
   async processMessages() {
-    // Pomalý model nesmí rozběhnout stejnou dávku při každém časovači znovu.
+    // A slow model must not start the same batch again on every timer tick.
     if (this.isTranslating) return;
     this.isTranslating = true;
     try {
@@ -1578,8 +1578,8 @@ class DiscordTranslator {
             this.processedMessages.delete(messageId);
             element?.removeAttribute(this.PROCESSED_ATTRIBUTE);
           }
-          // Chyba není překlad; další cyklus může požadavek zopakovat.
-          logger.error(`Překlad zprávy [${messageId}] selhal:`, error);
+          // An error is not a translation; the next cycle may retry the request.
+          logger.error(`Translation of message [${messageId}] failed:`, error);
           break;
         }
         await delay(CONFIG.API_DELAY_MS);
@@ -1616,12 +1616,12 @@ class DiscordTranslator {
       if (!flagIcon) {
         flagIcon = this.createFlagIcon(messageElement, messageId)?.firstElementChild;
       }
-      if (!flagIcon) throw new Error('Nepodařilo se vytvořit přepínací ikonu.');
+      if (!flagIcon) throw new Error('Could not create the translation toggle icon.');
       this.displaySingleTranslation(messageElement, translatedText, messageId, flagIcon, complete);
       this.processedMessages.add(messageId);
       messageElement.setAttribute(this.PROCESSED_ATTRIBUTE, '1');
     } catch (error) {
-      logger.error(`Překlad zprávy [${messageId}] se nepodařilo zobrazit:`, error);
+      logger.error(`Could not display the translation of message [${messageId}]:`, error);
     }
   }
 

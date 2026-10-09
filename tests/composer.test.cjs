@@ -35,6 +35,7 @@ function loadBackground(globals) {
 function loadContent(editor, responses = []) {
   const calls = [];
   const backups = [];
+  const completedBackups = [];
   const notices = [];
   let listener;
   const document = {
@@ -49,7 +50,11 @@ function loadContent(editor, responses = []) {
     sendMessage: async request => {
       if (request.type === 'backup-save') {
         backups.push(request.text);
-        return { ok: true };
+        return { ok: true, id: 'draft-one' };
+      }
+      if (request.type === 'backup-complete') {
+        completedBackups.push(request);
+        return { ok: true, saved: true };
       }
       calls.push(request);
       const response = responses.shift();
@@ -68,7 +73,7 @@ function loadContent(editor, responses = []) {
     }, setTimeout: fn => { fn(); }
   });
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'selection.js'), 'utf8'), context);
-  return { context, calls, backups, notices, listener, document };
+  return { context, calls, backups, completedBackups, notices, listener, document };
 }
 
 function textarea(value, start = 0, end = value.length) {
@@ -121,7 +126,7 @@ test('změněný návrh během čekání nikdy nepřepíše', async () => {
   };
   await vm.runInContext('translateSelection()', context);
   assert.equal(field.value, 'Ahoj, právě píšu dál');
-  assert.match(notices[0].textContent, /Výběr se během překladu změnil/);
+  assert.match(notices[0].textContent, /The selection changed during translation/);
 });
 
 test('heslo se nepřekládá ani neposílá serveru', async () => {
@@ -136,12 +141,12 @@ test('selhání zálohy zabrání překladu a ponechá český text', async () =
   const field = textarea('Dlouhý český návrh');
   const { context, calls, notices } = loadContent(field);
   context[apiNamespace].runtime.sendMessage = async () => ({
-    ok: false, body: { error: 'Úložiště je plné.' }
+    ok: false, body: { error: 'Storage is full.' }
   });
   await vm.runInContext('translateSelection()', context);
   assert.equal(field.value, 'Dlouhý český návrh');
   assert.equal(calls.length, 0);
-  assert.match(notices[0].textContent, /Úložiště je plné/);
+  assert.match(notices[0].textContent, /Storage is full/);
 });
 
 test('contenteditable předá výběr příkazu insertText', async () => {
@@ -230,7 +235,37 @@ test('Slate bez potvrzení ponechá český návrh', async () => {
   document.execCommand = () => { throw new Error('Nesmí se měnit pouze DOM'); };
   await vm.runInContext('translateSelection()', context);
   assert.equal(editor.textContent, 'Ahoj');
-  assert.match(notices[0].textContent, /Editor překlad nepřijal/);
+  assert.match(notices[0].textContent, /The editor did not accept the translation/);
+});
+
+test('Completed translations are saved before editor replacement, including changed selections', async () => {
+  const field = textarea('Ahoj');
+  const h = loadContent(field, [
+    { ok: true, body: { status: 'done', jobId: JOB_ID, translatedText: 'Hello' } }
+  ]);
+  const send = h.context[apiNamespace].runtime.sendMessage;
+  h.context[apiNamespace].runtime.sendMessage = async message => {
+    if (message.type === 'backup-complete') field.value = 'Changed draft';
+    return send(message);
+  };
+  await vm.runInContext('translateSelection()', h.context);
+  assert.equal(h.completedBackups.length, 1);
+  assert.equal(h.completedBackups[0].id, 'draft-one');
+  assert.equal(h.completedBackups[0].translatedText, 'Hello');
+  assert.equal(field.value, 'Changed draft');
+});
+
+test('A translation history write failure keeps the original draft', async () => {
+  const field = textarea('Ahoj');
+  const h = loadContent(field, [
+    { ok: true, body: { status: 'done', jobId: JOB_ID, translatedText: 'Hello' } }
+  ]);
+  const send = h.context[apiNamespace].runtime.sendMessage;
+  h.context[apiNamespace].runtime.sendMessage = message => message.type === 'backup-complete'
+    ? Promise.resolve({ ok: false, body: { error: 'Storage is full.' } }) : send(message);
+  await vm.runInContext('translateSelection()', h.context);
+  assert.equal(field.value, 'Ahoj');
+  assert.match(h.notices[0].textContent, /Storage is full/);
 });
 
 test('Chrome zkratka předá příkaz aktivní kartě', () => {
@@ -287,6 +322,41 @@ test('background předá překlad místnímu serveru a odmítne neznámou cestu'
   assert.equal(requests.length, 1);
 });
 
+test('Both translation protocols remove blank-line placeholders while preserving text and whitespace', async () => {
+  let handler;
+  const requests = [];
+  loadBackground({
+    chrome: {
+      commands: { onCommand: { addListener() {} } },
+      runtime: { onMessage: { addListener: fn => { handler = fn; } } }
+    }, console, AbortSignal,
+    fetch: async (url, options) => {
+      requests.push(JSON.parse(options.body));
+      return { ok: true, json: async () => ({}), text: async () => '{}' };
+    }
+  });
+  const send = message => new Promise(resolve => handler(message,
+    { url: 'https://discord.com/channels/1/2' }, resolve));
+  for (const [input, expected] of [
+    ['Ahoj?\n \uFEFF', 'Ahoj?\n '],
+    ['Ahoj?\r\n \u200B\uFEFF\r\nDalší odstavec.', 'Ahoj?\r\n \r\nDalší odstavec.'],
+    ['Ahoj?\n\u00A0\u200B', 'Ahoj?\n\u00A0'],
+    ['  Ahoj?\n ', '  Ahoj?\n '],
+    ['A\uFEFFhoj\nمی\u200Cروم\n\u200C', 'A\uFEFFhoj\nمی\u200Cروم\n\u200C']
+  ]) {
+    const body = { q: input, source: 'cs', target: 'en' };
+    for (const message of [
+      { type: 'translation-request', path: '/translate', body },
+      JSON.stringify({ type: 'fetch', args: ['http://127.0.0.1:5001/api/translate',
+        { method: 'POST', body: JSON.stringify(body) }] })
+    ]) {
+      await send(message);
+      assert.deepEqual(requests.at(-1), { q: expected, source: 'cs', target: 'en' });
+    }
+    assert.equal(body.q, input);
+  }
+});
+
 test('zálohy se ukládají místně, řadí bezpečně a lze je smazat', async () => {
   let messageHandler;
   let stored = [];
@@ -315,9 +385,24 @@ test('zálohy se ukládají místně, řadí bezpečně a lze je smazat', async 
   assert.equal(stored[0].site, 'discord.com');
   const listed = await send({ type: 'backup-list' });
   assert.equal(listed.entries.length, 50);
+  const newestId = stored[0].id;
+  const previousId = stored[1].id;
+  const completed = await send({ type: 'backup-complete', id: previousId, translatedText: 'Message 49' });
+  assert.equal(completed.saved, true);
+  assert.equal(stored[0].id, newestId);
+  assert.equal(stored[1].text, 'Zpráva 49');
+  assert.equal(stored[1].translatedText, 'Message 49');
+  assert.equal(typeof stored[1].completedAt, 'number');
+  assert.equal(stored.length, 50);
+  assert.equal((await send({ type: 'backup-complete', id: newestId, translatedText: '' })).ok, false);
+  assert.equal(stored[0].translatedText, undefined);
+
   await send({ type: 'backup-delete', id: stored[0].id });
   assert.equal(stored.length, 49);
   await send({ type: 'backup-clear' });
+  assert.equal(stored.length, 0);
+  const late = await send({ type: 'backup-complete', id: previousId, translatedText: 'Late result' });
+  assert.equal(late.saved, false);
   assert.equal(stored.length, 0);
 });
 
@@ -333,7 +418,7 @@ test('limit historie se ukládá, odmítá neplatné hodnoty a řadí změny se 
       storage: { local: {
         get: async () => ({ ...stored }),
         set: async change => {
-          if (failWrite) throw new Error('Úložiště není dostupné.');
+          if (failWrite) throw new Error('Storage is unavailable.');
           Object.assign(stored, change);
         }
       } }
@@ -386,7 +471,7 @@ test('okno rozšíření zpřístupní uložený text ke kopírování', async (
   const entries = element();
   const status = element();
   const clear = element();
-  const nodes = { entries, status, clear, 'toggle-history': element(),
+  const nodes = { entries, status, clear, 'toggle-history': element(), 'history-visibility': element(),
     'clear-summary': element(), 'clear-confirmation': element(),
     'clear-cancel': element(), 'clear-confirm': element(), 'api-settings': element(),
     'history-limit': element(), 'history-count': element(),
@@ -401,7 +486,7 @@ test('okno rozšíření zpřístupní uložený text ke kopírování', async (
     runtime: { sendMessage: async message => {
     assert.equal(message.type, 'backup-list');
     return { ok: true, entries: [{ id: 'one', text: 'Dlouhý český návrh',
-      site: 'discord.com', createdAt: 1700000000000 }] };
+      translatedText: 'Long English draft', site: 'discord.com', createdAt: 1700000000000 }] };
   } } };
   const context = vm.createContext({ document, [apiNamespace]: chrome,
     navigator: { clipboard: { writeText: async text => copied.push(text) } },
@@ -414,11 +499,13 @@ test('okno rozšíření zpřístupní uložený text ke kopírování', async (
   await nodes['toggle-history'].listeners.click();
   assert.equal(entries.hidden, false);
   const article = entries.children[0];
-  assert.equal(article.children[1].value, 'Dlouhý český návrh');
+  assert.equal(article.children[2].value, 'Dlouhý český návrh');
+  assert.equal(article.children[4].value, 'Long English draft');
   assert.match(article.children[0].textContent, /discord.com/);
-  await article.children[2].children[0].listeners.click();
-  assert.deepEqual(copied, ['Dlouhý český návrh']);
-  assert.equal(status.textContent, 'Text je ve schránce.');
+  await article.children.at(-1).children[0].listeners.click();
+  await article.children.at(-1).children[1].listeners.click();
+  assert.deepEqual(copied, ['Dlouhý český návrh', 'Long English draft']);
+  assert.equal(status.textContent, 'Text copied to the clipboard.');
   await nodes['toggle-history'].listeners.click();
   assert.equal(entries.hidden, true);
   assert.equal(entries.children.length, 0);
@@ -461,7 +548,7 @@ test('nastavení funguje bez permissions API, odmítne neplatné URL a obnoví v
   const document = { getElementById: id => nodes[id] ??= {
     value: '', textContent: '', listeners: {},
     addEventListener(type, callback) { this.listeners[type] = callback; },
-    replaceChildren() {}, appendChild() {}
+    replaceChildren() {}, appendChild() {}, focus() {}
   }, createElement: () => ({}) };
   const stored = { translationApiUrl: 'http://localhost:6000' };
   let storageFailure = false;
@@ -469,7 +556,7 @@ test('nastavení funguje bez permissions API, odmítne neplatné URL a obnoví v
     [apiNamespace]: {
       runtime: { sendMessage: async message => {
         if (message.type === 'settings-save') {
-          if (storageFailure) return { ok: false, body: { error: 'Úložiště je plné.' } };
+          if (storageFailure) return { ok: false, body: { error: 'Storage is full.' } };
           Object.assign(stored, { translationApiUrl: message.apiUrl, historyLimit: message.limit });
         }
         return { ok: true, entries: [], limit: stored.historyLimit ?? 50 };
@@ -477,7 +564,7 @@ test('nastavení funguje bez permissions API, odmítne neplatné URL a obnoví v
       storage: { local: {
         get: async () => stored,
         set: async value => {
-          if (storageFailure) throw new Error('Úložiště je plné.');
+          if (storageFailure) throw new Error('Storage is full.');
           Object.assign(stored, value);
         }
       } }
@@ -487,6 +574,7 @@ test('nastavení funguje bez permissions API, odmítne neplatné URL a obnoví v
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8'), context);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(nodes['api-url'].value, 'http://localhost:6000');
+  assert.equal(nodes['api-reset'].hidden, false);
   const submit = async value => {
     nodes['api-url'].value = value;
     await nodes['api-settings'].listeners.submit({ preventDefault() {} });
@@ -502,13 +590,14 @@ test('nastavení funguje bez permissions API, odmítne neplatné URL a obnoví v
   storageFailure = true;
   await submit('https://other.example');
   assert.equal(stored.translationApiUrl, 'https://translator.example:8443/api');
-  assert.match(nodes['api-status'].textContent, /Úložiště je plné/);
+  assert.match(nodes['api-status'].textContent, /Storage is full/);
   storageFailure = false;
   nodes['history-limit'].value = 7;
   await submit(stored.translationApiUrl);
   await nodes['api-reset'].listeners.click();
   assert.equal(stored.historyLimit, 7);
   assert.equal(nodes['history-limit'].value, 50);
+  assert.equal(nodes['api-reset'].hidden, true);
   assert.equal(stored.translationApiUrl, 'https://translator.example:8443/api');
   assert.equal(nodes['api-url'].value, 'http://127.0.0.1:5001');
   await submit(nodes['api-url'].value);

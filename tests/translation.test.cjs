@@ -70,9 +70,9 @@ for (const [name, responses, error] of [
   ['nedostupný server', [{ error: 'Failed to fetch' }], /Failed to fetch/],
   ['plná fronta', [envelope({ error: 'Fronta je plná' }, false, 429)], /Fronta/],
   ['chyba modelu', [envelope(job), envelope({ status: 'failed', error: 'Chyba modelu' })], /Chyba modelu/],
-  ['prázdný překlad', [envelope(job), envelope({ status: 'done', translatedText: '' })], /nevrátil přeložený/],
-  ['neplatné ID', [envelope({ status: 'pending', jobId: '../health' })], /platné ID/],
-  ['neplatný JSON', [{ ok: true, text: '<html>' }], /neplatnou odpověď/]
+  ['prázdný překlad', [envelope(job), envelope({ status: 'done', translatedText: '' })], /did not return translated/],
+  ['nevalid translation ID', [envelope({ status: 'pending', jobId: '../health' })], /valid translation ID/],
+  ['neplatný JSON', [{ ok: true, text: '<html>' }], /invalid response/]
 ]) {
   test(name, async () => {
     const { context } = load(responses);
@@ -83,7 +83,7 @@ for (const [name, responses, error] of [
 test('čekání na překlad má konečný limit', async () => {
   const { context } = load([envelope(job)]);
   context.config.TRANSLATION_TIMEOUT_MS = -1;
-  await assert.rejects(context.service.translate('Hello'), /Vypršel čas/);
+  await assert.rejects(context.service.translate('Hello'), /Translation timed out/);
 });
 
 test('chyba ručního překladu umožní opakování a neuloží chybu do cache', async () => {
@@ -245,7 +245,7 @@ test('ruční kliknutí zamění viditelný text a další kliknutí vrátí ori
   assert.equal(state.translatedElement.className, 'markupContent text16 discord-translator-translation');
   assert.equal(state.translatedElement.style.cssText, original.style.cssText);
   assert.equal(state.translatedElement.getAttribute('lang'), 'cs');
-  assert.equal(icon.title, 'Zobrazit originál');
+  assert.equal(icon.title, 'Show original');
   assert.equal(icon.classList.contains('translating'), false);
   assert.equal(icon.classList.contains('translation-complete'), true);
   assert.equal(icon.getAttribute('aria-busy'), 'false');
@@ -256,7 +256,7 @@ test('ruční kliknutí zamění viditelný text a další kliknutí vrátí ori
   await translator.translateSingleMessage(original, '1', icon);
   assert.equal(original.style.getPropertyValue('display'), 'block');
   assert.equal(state.translatedElement.hidden, true);
-  assert.equal(icon.title, 'Zobrazit překlad');
+  assert.equal(icon.title, 'Show translation');
   assert.equal(icon.classList.contains('translation-complete'), true);
   assert.equal(calls, 1);
 
@@ -352,7 +352,7 @@ test('průběžný překlad mění stejný uzel a během generování lze přepn
   assert.equal(original.style.getPropertyValue('display'), '');
   await translator.translateSingleMessage(original, '1', icon);
   assert.equal(translatedElement.hidden, false);
-  assert.equal(icon.title, 'Zobrazit originál');
+  assert.equal(icon.title, 'Show original');
   assert.equal(icon.classList.contains('translating'), false);
   assert.equal(icon.classList.contains('translation-complete'), true);
   assert.equal(icon.getAttribute('aria-busy'), 'false');

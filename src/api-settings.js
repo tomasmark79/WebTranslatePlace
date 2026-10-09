@@ -5,11 +5,11 @@ const API_SETTINGS = {
   normalize(value) {
     let url;
     try { url = new URL(value.trim()); } catch {
-      throw new Error('Zadej platnou adresu API včetně http:// nebo https://.');
+      throw new Error('Enter a valid API URL including http:// or https://.');
     }
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
         url.search || url.hash) {
-      throw new Error('Adresa API musí být HTTP/HTTPS bez přihlašovacích údajů, parametrů a fragmentu.');
+      throw new Error('The API URL must use HTTP/HTTPS without credentials, query parameters or fragments.');
     }
     return url.href.replace(/\/+$/, '');
   },

@@ -58,27 +58,27 @@ function selectionUnchanged(snapshot) {
 
 async function replaceSelection(snapshot, translated) {
   if (!selectionUnchanged(snapshot)) {
-    throw new Error('Výběr se během překladu změnil. Původní text zůstal zachovaný.');
+    throw new Error('The selection changed during translation. The original text was kept.');
   }
   if (snapshot.kind === 'editable' && snapshot.editor.matches?.('[data-slate-editor]')) {
-    // Slate drží obsah zprávy ve vlastním modelu. Přímá změna DOM by pouze
-    // zobrazila překlad, zatímco při odeslání by se použil původní text.
+    // Slate keeps message content in its own model. A direct DOM change would only
+    // display the translation, while sending would use the original text.
     const event = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, inputType: 'insertText', data: translated
     });
     snapshot.editor.dispatchEvent(event);
     if (!event.defaultPrevented) {
-      throw new Error('Editor překlad nepřijal. Původní text zůstal zachovaný.');
+      throw new Error('The editor did not accept the translation. The original text was kept.');
     }
     await new Promise(resolve => setTimeout(resolve, 100));
     if (translated !== snapshot.text && snapshot.editor.textContent === snapshot.editorText) {
-      throw new Error('Editor překlad nepotvrdil. Původní text zůstal zachovaný.');
+      throw new Error('The editor did not confirm the translation. The original text was kept.');
     }
     return;
   }
   if (document.execCommand('insertText', false, translated)) return;
   if (snapshot.kind !== 'control') {
-    throw new Error('Tento editor nepodporuje bezpečné nahrazení vybraného textu.');
+    throw new Error('This editor does not support safely replacing the selected text.');
   }
   const { element, start, end } = snapshot;
   element.setRangeText(translated, start, end, 'end');
@@ -100,7 +100,7 @@ function showNotice(message) {
 
 async function request(path, body, apiUrl) {
   const response = await selectionApi.runtime.sendMessage({ type: 'translation-request', path, body, apiUrl });
-  if (!response?.ok) throw new Error(response?.body?.error || 'Překlad se nezdařil.');
+  if (!response?.ok) throw new Error(response?.body?.error || 'Translation failed.');
   return response.body;
 }
 
@@ -110,17 +110,17 @@ async function translate(text, source = 'cs', target = 'en') {
   const deadline = Date.now() + TRANSLATION_TIMEOUT_MS;
   let result = await request('/translate', { q: text, source, target }, apiUrl);
   if (!/^[a-f0-9]{32}$/.test(result.jobId || '')) {
-    throw new Error('Server nevrátil platné ID překladu.');
+    throw new Error('The server did not return a valid translation ID.');
   }
   const jobId = result.jobId;
   while (result.status === 'pending') {
-    if (Date.now() >= deadline) throw new Error('Vypršel čas na překlad.');
+    if (Date.now() >= deadline) throw new Error('Translation timed out.');
     await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
     result = await request(`/translations/${jobId}`, undefined, apiUrl);
   }
-  if (result.status === 'failed') throw new Error(result.error || 'Překlad se nezdařil.');
+  if (result.status === 'failed') throw new Error(result.error || 'Translation failed.');
   if (result.status !== 'done' || !result.translatedText?.trim()) {
-    throw new Error('Server nevrátil přeložený text.');
+    throw new Error('The server did not return translated text.');
   }
   return result.translatedText;
 }
@@ -128,26 +128,32 @@ async function translate(text, source = 'cs', target = 'en') {
 async function translateSelection() {
   if (!document.hasFocus()) return;
   if (translating) {
-    showNotice('Překlad už probíhá.');
+    showNotice('A translation is already in progress.');
     return;
   }
   const snapshot = selectedText();
   if (!snapshot?.text.trim()) {
-    if (activeEditor()?.tagName !== 'IFRAME') showNotice('Nejprve označ text v editoru.');
+    if (activeEditor()?.tagName !== 'IFRAME') showNotice('Select some text in the editor first.');
     return;
   }
   if (snapshot.text.length > 10000) {
-    showNotice('Vybraný text je delší než limit 10 000 znaků.');
+    showNotice('The selected text exceeds the 10,000-character limit.');
     return;
   }
   translating = true;
   try {
-    // Původní výběr musí být bezpečně uložený dřív, než začne překlad.
+    // Save the original selection successfully before starting translation.
     const backup = await selectionApi.runtime.sendMessage({ type: 'backup-save', text: snapshot.text });
     if (!backup?.ok) {
-      throw new Error(backup?.body?.error || 'Původní text nelze uložit. Překlad nebyl spuštěn.');
+      throw new Error(backup?.body?.error || 'Could not save the original text. Translation was not started.');
     }
     const translated = await translate(snapshot.text);
+    const saved = await selectionApi.runtime.sendMessage({
+      type: 'backup-complete', id: backup.id, translatedText: translated
+    });
+    if (!saved?.ok) {
+      throw new Error(saved?.body?.error || 'Could not save the translation. The original text was kept.');
+    }
     await replaceSelection(snapshot, translated);
   } catch (error) {
     showNotice(error.message);

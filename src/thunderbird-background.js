@@ -7,4 +7,4 @@ Promise.all([
   mailApi.messageDisplayScripts.register({
     js: [{ file: 'thunderbird-message.js' }, { file: 'selection.js' }]
   })
-]).catch(error => console.error('[WebTranslatePlace] Registrace skriptů pro e-maily selhala:', error));
+]).catch(error => console.error('[WebTranslatePlace] Failed to register email scripts:', error));

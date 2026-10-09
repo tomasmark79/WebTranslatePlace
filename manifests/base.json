@@ -11,7 +11,7 @@
     "<all_urls>"
   ],
   "action": {
-    "default_title": "WebTranslatePlace – překlady a původní texty",
+    "default_title": "WebTranslatePlace – translations and original texts",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

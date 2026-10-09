@@ -44,11 +44,12 @@ button:disabled { opacity: .5; cursor: default; }
 main { max-height: 390px; overflow-y: auto; scrollbar-color: var(--border) var(--background); }
 article { padding: 12px 16px; border-top: 1px solid var(--border); }
 article:first-child { border-top: 0; }
+article label { display: block; margin: 8px 0 6px; color: var(--muted); font-size: 12px; }
 article p { margin-bottom: 8px; color: var(--muted); font-size: 12px; }
 textarea { box-sizing: border-box; width: 100%; min-height: 80px; resize: vertical; padding: 8px;
   color: var(--text); background: var(--field);
   border: 1px solid var(--border); border-radius: 5px; font: 13px/1.4 system-ui, sans-serif; }
-.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 button { padding: 5px 10px; border: 1px solid var(--border); border-radius: 5px;
   background: var(--button); color: var(--accent); cursor: pointer; }
 button:hover:not(:disabled) { background: var(--button-hover); border-color: var(--focus); }
