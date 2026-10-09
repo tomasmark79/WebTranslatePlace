@@ -321,6 +321,57 @@ test('zálohy se ukládají místně, řadí bezpečně a lze je smazat', async 
   assert.equal(stored.length, 0);
 });
 
+test('limit historie se ukládá, odmítá neplatné hodnoty a řadí změny se zálohami', async () => {
+  let messageHandler;
+  let sequence = 0;
+  let failWrite = false;
+  const stored = {};
+  loadBackground({
+    chrome: {
+      commands: { onCommand: { addListener() {} } },
+      runtime: { onMessage: { addListener: fn => { messageHandler = fn; } } },
+      storage: { local: {
+        get: async () => ({ ...stored }),
+        set: async change => {
+          if (failWrite) throw new Error('Úložiště není dostupné.');
+          Object.assign(stored, change);
+        }
+      } }
+    }, console, crypto: { randomUUID: () => String(++sequence) }
+  });
+  const send = message => new Promise(resolve => messageHandler(message, {}, resolve));
+  assert.equal((await send({ type: 'backup-list' })).limit, 50);
+  for (const text of ['První', 'Druhý', 'Třetí']) {
+    assert.equal((await send({ type: 'backup-save', text })).ok, true);
+  }
+  await Promise.all([
+    send({ type: 'settings-save', apiUrl: 'https://translator.example/api/', limit: 2 }),
+    send({ type: 'backup-save', text: 'Čtvrtý' })
+  ]);
+  assert.equal(stored.historyLimit, 2);
+  assert.equal(stored.translationApiUrl, 'https://translator.example/api');
+  assert.deepEqual(Array.from(stored.originalTexts, entry => entry.text), ['Čtvrtý', 'Třetí']);
+  const before = JSON.stringify(stored);
+  for (const apiUrl of ['invalid', 'file:///tmp/api', 'https://user:secret@example.com']) {
+    assert.equal((await send({ type: 'settings-save', apiUrl, limit: 1 })).ok, false);
+    assert.equal(JSON.stringify(stored), before);
+  }
+  for (const limit of [0, -1, 1001, 1.5, '5', null]) {
+    assert.equal((await send({ type: 'settings-save', apiUrl: 'https://translator.example/api/', limit })).ok, false);
+    assert.equal(JSON.stringify(stored), before);
+  }
+  failWrite = true;
+  assert.equal((await send({ type: 'settings-save', apiUrl: 'https://translator.example/api/', limit: 1 })).ok, false);
+  assert.equal(JSON.stringify(stored), before);
+  failWrite = false;
+  assert.equal((await send({ type: 'settings-save', apiUrl: 'https://translator.example/api/', limit: 1000 })).ok, true);
+  assert.equal((await send({ type: 'backup-list' })).limit, 1000);
+  await send({ type: 'backup-save', text: 'Pátý' });
+  assert.equal(stored.originalTexts.length, 3);
+  await send({ type: 'backup-clear' });
+  assert.equal((await send({ type: 'backup-list' })).limit, 1000);
+});
+
 test('okno rozšíření zpřístupní uložený text ke kopírování', async () => {
   function element() {
     return {
@@ -329,13 +380,16 @@ test('okno rozšíření zpřístupní uložený text ke kopírování', async (
       appendChild(child) { this.children.push(child); },
       replaceChildren(...children) { this.children = children; },
       addEventListener(type, callback) { this.listeners[type] = callback; },
-      setAttribute() {}
+      setAttribute() {}, focus() { this.focused = true; }
     };
   }
   const entries = element();
   const status = element();
   const clear = element();
-  const nodes = { entries, status, clear, 'api-settings': element(),
+  const nodes = { entries, status, clear, 'toggle-history': element(),
+    'clear-summary': element(), 'clear-confirmation': element(),
+    'clear-cancel': element(), 'clear-confirm': element(), 'api-settings': element(),
+    'history-limit': element(), 'history-count': element(),
     'discord-enabled': element(), 'discord-status': element(),
     'api-url': element(), 'api-save': element(), 'api-reset': element(), 'api-status': element() };
   const copied = [];
@@ -356,12 +410,20 @@ test('okno rozšíření zpřístupní uložený text ke kopírování', async (
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'api-settings.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8'), context);
   await vm.runInContext('render()', context);
+  assert.equal(entries.children.length, 0);
+  await nodes['toggle-history'].listeners.click();
+  assert.equal(entries.hidden, false);
   const article = entries.children[0];
   assert.equal(article.children[1].value, 'Dlouhý český návrh');
   assert.match(article.children[0].textContent, /discord.com/);
   await article.children[2].children[0].listeners.click();
   assert.deepEqual(copied, ['Dlouhý český návrh']);
   assert.equal(status.textContent, 'Text je ve schránce.');
+  await nodes['toggle-history'].listeners.click();
+  assert.equal(entries.hidden, true);
+  assert.equal(entries.children.length, 0);
+  await vm.runInContext('render()', context);
+  assert.equal(entries.children.length, 0);
 });
 
 test('uložená adresa včetně základní cesty řídí POST i polling a změna platí ihned', async () => {
@@ -405,7 +467,13 @@ test('nastavení funguje bez permissions API, odmítne neplatné URL a obnoví v
   let storageFailure = false;
   const context = vm.createContext({ document, URL,
     [apiNamespace]: {
-      runtime: { sendMessage: async () => ({ ok: true, entries: [] }) },
+      runtime: { sendMessage: async message => {
+        if (message.type === 'settings-save') {
+          if (storageFailure) return { ok: false, body: { error: 'Úložiště je plné.' } };
+          Object.assign(stored, { translationApiUrl: message.apiUrl, historyLimit: message.limit });
+        }
+        return { ok: true, entries: [], limit: stored.historyLimit ?? 50 };
+      } },
       storage: { local: {
         get: async () => stored,
         set: async value => {
@@ -436,8 +504,16 @@ test('nastavení funguje bez permissions API, odmítne neplatné URL a obnoví v
   assert.equal(stored.translationApiUrl, 'https://translator.example:8443/api');
   assert.match(nodes['api-status'].textContent, /Úložiště je plné/);
   storageFailure = false;
+  nodes['history-limit'].value = 7;
+  await submit(stored.translationApiUrl);
   await nodes['api-reset'].listeners.click();
+  assert.equal(stored.historyLimit, 7);
+  assert.equal(nodes['history-limit'].value, 50);
+  assert.equal(stored.translationApiUrl, 'https://translator.example:8443/api');
+  assert.equal(nodes['api-url'].value, 'http://127.0.0.1:5001');
+  await submit(nodes['api-url'].value);
   assert.equal(stored.translationApiUrl, 'http://127.0.0.1:5001');
+  assert.equal(stored.historyLimit, 50);
   assert.equal(nodes['api-url'].value, stored.translationApiUrl);
   assert.equal(nodes['api-save'].disabled, false);
 });

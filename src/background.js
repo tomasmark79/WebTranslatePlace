@@ -21,7 +21,14 @@ const API_SETTINGS = {
   }
 };
 const BACKUPS_KEY = 'originalTexts';
-const MAX_BACKUPS = 50;
+const HISTORY_LIMIT_KEY = 'historyLimit';
+const DEFAULT_HISTORY_LIMIT = 50;
+function validHistoryLimit(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 1000;
+}
+function historyLimit(stored) {
+  return validHistoryLimit(stored[HISTORY_LIMIT_KEY]) ? stored[HISTORY_LIMIT_KEY] : DEFAULT_HISTORY_LIMIT;
+}
 let backupQueue = Promise.resolve();
 
 function queueBackupChange(change) {
@@ -33,10 +40,22 @@ function queueBackupChange(change) {
 async function backupMessage(message, sender) {
   if (message.type === 'backup-list') {
     await backupQueue;
-    return { ok: true, entries: (await composerApi.storage.local.get(BACKUPS_KEY))[BACKUPS_KEY] || [] };
+    const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY]);
+    return { ok: true, entries: stored[BACKUPS_KEY] || [], limit: historyLimit(stored) };
   }
   return queueBackupChange(async () => {
-    const entries = (await composerApi.storage.local.get(BACKUPS_KEY))[BACKUPS_KEY] || [];
+    const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY]);
+    const entries = stored[BACKUPS_KEY] || [];
+    if (message.type === 'settings-save') {
+      if (!validHistoryLimit(message.limit)) throw new Error('Zadej celé číslo od 1 do 1 000.');
+      const apiUrl = API_SETTINGS.normalize(message.apiUrl);
+      await composerApi.storage.local.set({
+        [API_SETTINGS.key]: apiUrl,
+        [HISTORY_LIMIT_KEY]: message.limit,
+        [BACKUPS_KEY]: entries.slice(0, message.limit)
+      });
+      return { ok: true };
+    }
     if (message.type === 'backup-save') {
       if (typeof message.text !== 'string' || !message.text.trim() ||
           message.text.length > 10000) throw new Error('Neplatný text pro zálohu.');
@@ -46,7 +65,7 @@ async function backupMessage(message, sender) {
         id: crypto.randomUUID(), text: message.text, site,
         createdAt: Date.now()
       };
-      await composerApi.storage.local.set({ [BACKUPS_KEY]: [entry, ...entries].slice(0, MAX_BACKUPS) });
+      await composerApi.storage.local.set({ [BACKUPS_KEY]: [entry, ...entries].slice(0, historyLimit(stored)) });
       return { ok: true, id: entry.id };
     }
     if (message.type === 'backup-delete') {
@@ -73,7 +92,7 @@ composerApi.commands.onCommand.addListener(async (command, tab) => {
 
 composerApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!['translation-request', 'backup-save', 'backup-list', 'backup-delete',
-        'backup-clear'].includes(message?.type)) return;
+        'backup-clear', 'settings-save'].includes(message?.type)) return;
   (async () => {
     try {
       if (message.type !== 'translation-request') {
