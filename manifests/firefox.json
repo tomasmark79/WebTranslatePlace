@@ -21,7 +21,10 @@
         "default": "Ctrl+Alt+S",
         "mac": "Command+Alt+S"
       },
-      "description": "Translate selected text into your chosen language"
+      "description": "TranslatePlace: translate into language 1"
+    },
+    "translate-selection-secondary": {
+      "description": "TranslatePlace: translate into language 2"
     }
   }
 }

@@ -60,7 +60,10 @@
         "default": "Alt+Shift+S",
         "mac": "Alt+Shift+S"
       },
-      "description": "Translate selected text into your chosen language"
+      "description": "TranslatePlace: translate into language 1"
+    },
+    "translate-selection-secondary": {
+      "description": "TranslatePlace: translate into language 2"
     }
   }
 }

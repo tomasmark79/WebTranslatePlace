@@ -39,12 +39,12 @@ function mailContext(text = 'Hello world', error = false) {
   return { context, requests, panels, document };
 }
 
-test('Selected received mail translates auto → cs as plain text without backups or replacement', async () => {
+test('Selected received mail translates auto → en as plain text without backups or replacement', async () => {
   const h = mailContext();
   await vm.runInContext('translateReceivedSelection()', h.context);
   assert.equal(h.requests.length, 1);
   assert.deepEqual(JSON.parse(JSON.stringify(h.requests[0].body)), {
-    q: 'Hello world', source: 'auto', target: 'cs'
+    q: 'Hello world', source: 'auto', target: 'en'
   });
   assert.equal(h.panels[0].children[1].textContent, '<b>Ahoj světe</b>');
   assert.equal(vm.runInContext('translating', h.context), false);
@@ -88,7 +88,7 @@ test('Thunderbird designMode compose selection saves original and uses native ed
   assert.equal(messages[0].type, 'backup-save');
   assert.equal(messages[0].text, 'Ahoj');
   assert.equal(messages[1].body.source, 'auto');
-  assert.equal(messages[1].body.target, 'cs');
+  assert.equal(messages[1].body.target, 'en');
   assert.equal(messages[2].type, 'backup-complete');
   assert.equal(messages[2].id, 'mail-draft');
   assert.equal(messages[2].translatedText, 'Hello');
@@ -102,4 +102,12 @@ test('Received mail uses the chosen target language', async () => {
   await vm.runInContext('translateReceivedSelection()', h.context);
   assert.equal(h.requests[0].body.source, 'auto');
   assert.equal(h.requests[0].body.target, 'de');
+});
+
+
+test('Received mail supports the second TranslatePlace language independently', async () => {
+  const h = mailContext();
+  h.context.browser.storage.local.get = async () => ({ translationTarget: 'de', secondaryTranslationTarget: 'fr' });
+  await vm.runInContext('translateReceivedSelection(true)', h.context);
+  assert.equal(h.requests[0].body.target, 'fr');
 });

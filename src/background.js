@@ -33,7 +33,7 @@ const API_SETTINGS = {
 const BACKUPS_KEY = 'originalTexts';
 const HISTORY_LIMIT_KEY = 'historyLimit';
 const DEFAULT_HISTORY_LIMIT = 50;
-const DEFAULT_TARGET = 'cs';
+const DEFAULT_TARGET = 'en';
 const TARGET_LANGUAGES = new Set('af ar bg bn ca cs cy da de el en es et fa fi fr gu he hi hr hu id it ja kn ko lt lv mk ml mr ne nl no pa pl pt ro ru sk sl so sq sv sw ta te th tl tr uk ur vi zh-cn zh-tw'.split(' '));
 function translationTarget(stored) {
   return TARGET_LANGUAGES.has(stored.translationTarget) ? stored.translationTarget : DEFAULT_TARGET;
@@ -55,19 +55,21 @@ function queueBackupChange(change) {
 async function backupMessage(message, sender) {
   if (message.type === 'backup-list') {
     await backupQueue;
-    const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY, 'translationTarget']);
-    return { ok: true, entries: stored[BACKUPS_KEY] || [], limit: historyLimit(stored), target: translationTarget(stored) };
+    const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY, 'translationTarget', 'secondaryTranslationTarget', 'discordTarget']);
+    return { ok: true, entries: stored[BACKUPS_KEY] || [], limit: historyLimit(stored), target: translationTarget(stored), secondaryTarget: stored.secondaryTranslationTarget || 'cs', discordTarget: stored.discordTarget || stored.translationTarget || 'cs' };
   }
   return queueBackupChange(async () => {
-    const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY, 'translationTarget']);
+    const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY, 'translationTarget', 'secondaryTranslationTarget', 'discordTarget']);
     const entries = stored[BACKUPS_KEY] || [];
     if (message.type === 'settings-save') {
       if (!validHistoryLimit(message.limit)) throw new Error('Enter a whole number from 1 to 1,000.');
       const apiUrl = API_SETTINGS.normalize(message.apiUrl);
-      if (!TARGET_LANGUAGES.has(message.target)) throw new Error('Select a supported target language.');
+      if (!TARGET_LANGUAGES.has(message.target) || !TARGET_LANGUAGES.has(message.discordTarget) || !TARGET_LANGUAGES.has(message.secondaryTarget)) throw new Error('Select a supported target language.');
       await composerApi.storage.local.set({
         [API_SETTINGS.key]: apiUrl,
         translationTarget: message.target,
+        secondaryTranslationTarget: message.secondaryTarget,
+        discordTarget: message.discordTarget,
         [HISTORY_LIMIT_KEY]: message.limit,
         [BACKUPS_KEY]: entries.slice(0, message.limit)
       });
@@ -114,11 +116,11 @@ async function backupMessage(message, sender) {
 }
 
 composerApi.commands.onCommand.addListener(async (command, tab) => {
-  if (command !== 'translate-selection') return;
+  if (!['translate-selection', 'translate-selection-secondary'].includes(command)) return;
   const activeTab = tab || (await composerApi.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   if (activeTab?.id == null) return;
   // The command reaches all frames; only the frame with the active editor translates.
-  composerApi.tabs.sendMessage(activeTab.id, { type: 'translate-selection' }).catch(error => {
+  composerApi.tabs.sendMessage(activeTab.id, { type: command }).catch(error => {
     console.warn('[WebTranslatePlace] No editor is available on this page:', error.message);
   });
 });

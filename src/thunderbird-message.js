@@ -1,6 +1,6 @@
 globalThis.WTP_READ_MESSAGE = true;
 
-async function translateReceivedSelection() {
+async function translateReceivedSelection(secondary = false) {
   if (!document.hasFocus()) return;
   if (translating) return;
   const selection = window.getSelection();
@@ -32,7 +32,7 @@ async function translateReceivedSelection() {
   document.documentElement.appendChild(panel);
   try {
     // Translation stays separate from the original and never changes stored mail.
-    result.textContent = await translate(text);
+    result.textContent = await translate(text, await selectionTarget(secondary));
   } catch (error) {
     result.textContent = error.message;
   } finally {

@@ -1,6 +1,7 @@
 // Thunderbird uses the same settings and backups, without Discord controls.
 if (composerApi.runtime.getManifest?.().compose_action) {
   document.getElementById('discord-settings').hidden = true;
+  document.getElementById('discord-target-settings').hidden = true;
 }
 
 const entriesElement = document.getElementById('entries');
@@ -18,6 +19,8 @@ const apiStatus = document.getElementById('api-status');
 const discordToggle = document.getElementById('discord-enabled');
 const discordStatus = document.getElementById('discord-status');
 const historyField = document.getElementById('history-limit');
+const discordTargetField = document.getElementById('discord-target');
+const secondaryTargetField = document.getElementById('secondary-translation-target');
 const targetField = document.getElementById('translation-target');
 const historyCount = document.getElementById('history-count');
 
@@ -47,16 +50,18 @@ function updateSettingsControls() {
   apiSave.disabled = !apiReady || !historyReady || savingSettings;
   apiReset.disabled = apiSave.disabled;
   apiField.disabled = savingSettings;
-  historyField.disabled = targetField.disabled = !historyReady || savingSettings;
+  historyField.disabled = targetField.disabled = secondaryTargetField.disabled = discordTargetField.disabled = !historyReady || savingSettings;
   let defaultApi = false;
   try { defaultApi = API_SETTINGS.normalize(apiField.value) === API_SETTINGS.defaultUrl; }
   catch { /* Invalid input differs from the defaults. */ }
-  apiReset.hidden = !apiReady || !historyReady || (defaultApi && Number(historyField.value) === 50 && targetField.value === 'cs');
+  apiReset.hidden = !apiReady || !historyReady || (defaultApi && Number(historyField.value) === 50 && targetField.value === 'en' && secondaryTargetField.value === 'cs' && discordTargetField.value === 'cs');
 }
 
 apiField.addEventListener('input', updateSettingsControls);
 historyField.addEventListener('input', updateSettingsControls);
 targetField.addEventListener('input', updateSettingsControls);
+secondaryTargetField.addEventListener('input', updateSettingsControls);
+discordTargetField.addEventListener('input', updateSettingsControls);
 
 apiForm.addEventListener('submit', async event => {
   event.preventDefault();
@@ -69,7 +74,7 @@ apiForm.addEventListener('submit', async event => {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
       throw new Error('Enter a whole number from 1 to 1,000.');
     }
-    await backupRequest('settings-save', { apiUrl, limit, target: targetField.value });
+    await backupRequest('settings-save', { apiUrl, limit, target: targetField.value, secondaryTarget: secondaryTargetField.value, discordTarget: discordTargetField.value });
     apiField.value = apiUrl;
     await render();
     apiStatus.textContent = 'Settings saved.';
@@ -83,7 +88,9 @@ apiForm.addEventListener('submit', async event => {
 apiReset.addEventListener('click', () => {
   apiField.value = API_SETTINGS.defaultUrl;
   historyField.value = 50;
-  targetField.value = 'cs';
+  targetField.value = 'en';
+  secondaryTargetField.value = 'cs';
+  discordTargetField.value = 'cs';
   apiStatus.textContent = 'Default values are ready. Click Save to apply them.';
   updateSettingsControls();
   apiSave.focus();
@@ -107,10 +114,12 @@ function status(message) {
 }
 
 async function render() {
-  const { entries, limit = 50, target = 'cs' } = await backupRequest('backup-list');
+  const { entries, limit = 50, target = 'en', secondaryTarget = 'cs', discordTarget = 'cs' } = await backupRequest('backup-list');
   if (!historyReady || savingSettings) {
     historyField.value = limit;
     targetField.value = target;
+    secondaryTargetField.value = secondaryTarget;
+    discordTargetField.value = discordTarget;
   }
   historyReady = true;
   updateSettingsControls();
@@ -247,10 +256,15 @@ async function showShortcut() {
   if (!hint || !composerApi.commands?.getAll) return;
   try {
     const commands = await composerApi.commands.getAll();
-    const command = commands.find(item => item.name === 'translate-selection');
-    hint.textContent = command?.shortcut
-      ? `TranslatePlace (${command.shortcut})`
-      : 'TranslatePlace (no shortcut assigned)';
+    for (const [name, id, label] of [
+      ['translate-selection', 'shortcut-help', 'TranslatePlace language 1'],
+      ['translate-selection-secondary', 'secondary-shortcut-help', 'TranslatePlace language 2']
+    ]) {
+      const element = document.getElementById(id);
+      const command = commands.find(item => item.name === name);
+      if (element) element.textContent = command?.shortcut
+        ? `${label} (${command.shortcut})` : `${label} (no shortcut assigned)`;
+    }
   } catch { /* Browsers without support use the default hint. */ }
 }
 void showShortcut();

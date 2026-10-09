@@ -34,7 +34,7 @@ header p, footer { color: var(--muted); font-size: 12px; }
 .toggle-row input:disabled { opacity: .5; cursor: default; }
 #discord-status:not(:empty) { margin-top: 8px; color: var(--accent); }
 #api-settings label { display: block; margin-bottom: 6px; }
-#api-url, #history-limit, #translation-target { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px;
+#api-url, #history-limit, #translation-target, #secondary-translation-target, #discord-target { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px;
   color: var(--text); background: var(--field);
   border: 1px solid var(--border); border-radius: 5px; font: inherit; }
 #api-status { color: var(--accent); }
@@ -82,3 +82,7 @@ footer { border-top: 1px solid var(--border); }
     --primary-text: #002444;
   }
 }
+
+.language-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.language-fields > div { min-width: 0; }
+#discord-target-settings { grid-column: 1 / -1; }

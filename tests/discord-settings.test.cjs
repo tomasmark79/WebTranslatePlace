@@ -79,7 +79,8 @@ function discord(initialState) {
     stopProcessing() { stops++; }, cleanupTranslations() { cleanups++; } });
   return { translator, context, markers,
     change(value, area = 'local') { settingsListener({ translatorActive: { newValue: value } }, area); },
-    target(value) { settingsListener({ translationTarget: { oldValue: 'cs', newValue: value } }, 'local'); },
+    composerTarget(value) { settingsListener({ translationTarget: { oldValue: 'en', newValue: value } }, 'local'); },
+    target(value) { settingsListener({ discordTarget: { oldValue: 'cs', newValue: value } }, 'local'); },
     get starts() { return starts; }, get stops() { return stops; }, get cleanups() { return cleanups; } };
 }
 
@@ -160,4 +161,16 @@ test('An old target job cannot render progress or cache its result after the tar
   finish('Ahoj');
   await request;
   assert.equal(h.translator.translationCache.size, 0);
+});
+
+
+test('Changing TranslatePlace language leaves Discord cache and running jobs intact', async () => {
+  const h = discord(true);
+  await h.translator.start();
+  h.translator.translationCache.set('Hello', 'Ahoj');
+  const revision = h.translator.stateRevision;
+  h.composerTarget('de');
+  assert.equal(h.translator.translationCache.get('Hello'), 'Ahoj');
+  assert.equal(h.translator.stateRevision, revision);
+  assert.equal(h.cleanups, 0);
 });

@@ -60,6 +60,7 @@ class BuildTests(unittest.TestCase):
                 if target == "firefox":
                     self.assertEqual(manifest["browser_specific_settings"]["gecko"]["id"],
                                      "webtranslateplace@tomasmark79")
+                self.assertIn("translate-selection-secondary", manifest["commands"])
                 shortcut = manifest["commands"]["translate-selection"]["suggested_key"]
                 self.assertEqual(shortcut["default"], "Ctrl+Alt+S" if target == "firefox" else "Alt+Shift+S")
                 self.assertEqual(shortcut["mac"], "Command+Alt+S" if target == "firefox" else "Alt+Shift+S")

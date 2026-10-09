@@ -107,7 +107,7 @@ async function request(path, body, apiUrl) {
 async function translate(text, target) {
   const stored = await selectionApi.storage.local.get(['translationApiUrl', 'translationTarget']);
   const apiUrl = stored.translationApiUrl || 'http://127.0.0.1:5001';
-  target ??= stored.translationTarget || 'cs';
+  target ??= stored.translationTarget || 'en';
   const deadline = Date.now() + TRANSLATION_TIMEOUT_MS;
   let result = await request('/translate', { q: text, source: 'auto', target }, apiUrl);
   if (!/^[a-f0-9]{32}$/.test(result.jobId || '')) {
@@ -126,7 +126,13 @@ async function translate(text, target) {
   return result.translatedText;
 }
 
-async function translateSelection() {
+async function selectionTarget(secondary = false) {
+  const key = secondary ? 'secondaryTranslationTarget' : 'translationTarget';
+  const stored = await selectionApi.storage.local.get(key);
+  return stored[key] || (secondary ? 'cs' : 'en');
+}
+
+async function translateSelection(secondary = false) {
   if (!document.hasFocus()) return;
   if (translating) {
     showNotice('A translation is already in progress.');
@@ -144,8 +150,7 @@ async function translateSelection() {
   translating = true;
   try {
     // Save the original selection successfully before starting translation.
-    const stored = await selectionApi.storage.local.get('translationTarget');
-    const target = stored.translationTarget || 'cs';
+    const target = await selectionTarget(secondary);
     const backup = await selectionApi.runtime.sendMessage({ type: 'backup-save', text: snapshot.text, target });
     if (!backup?.ok) {
       throw new Error(backup?.body?.error || 'Could not save the original text. Translation was not started.');
@@ -166,8 +171,9 @@ async function translateSelection() {
 }
 
 selectionApi.runtime.onMessage.addListener(message => {
-  if (message?.type === 'translate-selection') {
-    if (globalThis.WTP_READ_MESSAGE) void translateReceivedSelection();
-    else void translateSelection();
+  if (['translate-selection', 'translate-selection-secondary'].includes(message?.type)) {
+    const secondary = message.type === 'translate-selection-secondary';
+    if (globalThis.WTP_READ_MESSAGE) void translateReceivedSelection(secondary);
+    else void translateSelection(secondary);
   }
 });

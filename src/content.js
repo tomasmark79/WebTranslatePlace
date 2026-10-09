@@ -126,11 +126,11 @@ class TranslationService {
 
   static async translate(text, onProgress) {
     // Keep submission and polling on the same server, even if settings change.
-    const stored = await extensionApi.storage.local.get(['translationApiUrl', 'translationTarget']);
+    const stored = await extensionApi.storage.local.get(['translationApiUrl', 'discordTarget', 'translationTarget']);
     const apiUrl = stored.translationApiUrl || CONFIG.TRANSLATION_API_URL;
     const deadline = Date.now() + CONFIG.TRANSLATION_TIMEOUT_MS;
     let response = await this.request('/translate', {
-      q: text, source: 'auto', target: stored.translationTarget || 'cs'
+      q: text, source: 'auto', target: stored.discordTarget || stored.translationTarget || 'cs'
     }, apiUrl);
     const jobId = response.jobId;
     if (typeof jobId !== 'string' || !/^[a-f0-9]{32}$/.test(jobId)) {
@@ -404,8 +404,8 @@ class DiscordTranslator {
 
     // Apply setting changes to all open Discord tabs.
     const onSettingsChanged = (changes, area) => {
-      if (area === 'local' && changes.translationTarget &&
-          changes.translationTarget.newValue !== changes.translationTarget.oldValue && !this.context?.isInvalid) {
+      if (area === 'local' && changes.discordTarget &&
+          changes.discordTarget.newValue !== changes.discordTarget.oldValue && !this.context?.isInvalid) {
         this.translationCache.clear();
         const active = this.isActive;
         this.setActive(false);

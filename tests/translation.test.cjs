@@ -450,7 +450,15 @@ test('hotový překlad z cache má fajfku a žádnou nekonečnou SVG animaci', a
 
 test('Discord uses the selected target and automatic source detection', async () => {
   const { context, requests } = load([envelope(job), envelope({ status: 'done', translatedText: 'Hallo' })]);
-  context[apiNamespace].storage.local.get = async () => ({ translationTarget: 'de' });
+  context[apiNamespace].storage.local.get = async () => ({ translationTarget: 'en', discordTarget: 'de' });
   assert.equal(await context.service.translate('Hello'), 'Hallo');
   assert.deepEqual(JSON.parse(requests[0].args[1].body), { q: 'Hello', source: 'auto', target: 'de' });
+});
+
+
+test('Discord preserves the legacy shared language before separate settings are saved', async () => {
+  const { context, requests } = load([envelope(job), envelope({ status: 'done', translatedText: 'Hallo' })]);
+  context[apiNamespace].storage.local.get = async () => ({ translationTarget: 'de' });
+  await context.service.translate('Hello');
+  assert.equal(JSON.parse(requests[0].args[1].body).target, 'de');
 });
