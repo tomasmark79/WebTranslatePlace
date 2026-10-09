@@ -485,3 +485,197 @@ test('Discord preserves the legacy shared language before separate settings are 
   await context.service.translate('Hello');
   assert.equal(JSON.parse(requests[0].args[1].body).target, 'de');
 });
+
+function groupedDiscord(specs) {
+  const { context } = load([]);
+  const rows = [], messages = [], calls = [];
+  const list = fakeElement();
+  const translator = Object.create(context.Translator.prototype);
+  context.document = {
+    createElement: tag => fakeElement(tag.toUpperCase()),
+    querySelectorAll: selector => selector === '[id^="chat-messages-"]' ? rows : []
+  };
+  function add(text, header = false) {
+    const row = fakeElement();
+    row.querySelector = () => header ? {} : null;
+    list.insertBefore(row);
+    rows.push(row);
+    if (text !== null) {
+      const element = fakeElement();
+      element.id = `message-content-${rows.length}`;
+      element.textContent = text;
+      element.closest = () => row;
+      row.insertBefore(element);
+      messages.push(element);
+      return element;
+    }
+  }
+  for (const [text, header] of specs) add(text, header);
+  Object.assign(translator, {
+    isActive: true, stateRevision: 0, context: { isInvalid: false },
+    messageGroups: new Map(), messageTranslations: new Map(),
+    translationCache: new Map(), processedMessages: new Set(),
+    TRANSLATION_CLASS: 'discord-translator-translation',
+    FLAG_CONTAINER_CLASS: 'discord-translator-flag-container',
+    getMessageId: element => element.id,
+    shouldSkipMessage: () => false, isMessageBeingEdited: () => false,
+    isElementVisible: element => element.visible !== false,
+    extractCleanText: element => element.textContent,
+    createFlagIcon(element) {
+      const container = fakeElement();
+      container.firstElementChild = fakeElement('BUTTON');
+      element.parentElement.insertBefore(container);
+      return container;
+    },
+    translateText: async text => { calls.push(text); return `Translated: ${text}`; }
+  });
+  return { translator, rows, messages, calls, add };
+}
+
+test('one Discord icon covers thirty messages; author headers and attachment-only rows split blocks', async () => {
+  const h = groupedDiscord([
+    ...Array.from({ length: 30 }, (_, i) => [`Message ${i}`, i === 0]),
+    [null, true], ['Another author', false], ['First author again', true]
+  ]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const groups = [...h.translator.messageGroups.values()];
+  assert.equal(groups.length, 3);
+  assert.equal(groups[0].messages.length, 30);
+  assert.equal(groups[1].messages[0].textContent, 'Another author');
+  assert.equal(groups[2].messages.length, 1);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  assert.equal(h.translator.messageGroups.size, 3);
+  assert.equal(h.translator.messageGroups.get(h.rows[0]), groups[0]);
+});
+
+test('a group translates separate messages in order and toggles all originals without another request', async () => {
+  const h = groupedDiscord([['One', true], ['Two', false], ['Other author', true]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  await h.translator.translateMessageGroup(group);
+  assert.deepEqual(h.calls, ['One', 'Two']);
+  assert.equal(h.translator.messageTranslations.size, 2);
+  assert.equal(group.icon.getAttribute('data-translation-state'), 'done');
+  for (const element of group.messages) {
+    const state = h.translator.messageTranslations.get(element.id);
+    assert.equal(state.translatedElement.textContent, `Translated: ${element.textContent}`);
+    assert.equal(state.icon, group.icon);
+    assert.equal(element.style.getPropertyValue('display'), 'none');
+  }
+  await h.translator.translateMessageGroup(group);
+  for (const element of group.messages) assert.equal(element.style.getPropertyValue('display'), '');
+  await h.translator.translateMessageGroup(group);
+  assert.deepEqual(h.calls, ['One', 'Two']);
+  assert.equal(h.translator.messageTranslations.has(h.messages[2].id), false);
+});
+
+test('new messages join the existing control and only missing translations are requested', async () => {
+  const h = groupedDiscord([['One', true]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  await h.translator.translateMessageGroup(group);
+  h.add('Two');
+  await h.translator.addGroupedFlagIcons(h.messages);
+  assert.equal(h.translator.messageGroups.size, 1);
+  assert.equal(group.icon.getAttribute('data-translation-state'), 'idle');
+  await h.translator.translateMessageGroup(group);
+  assert.deepEqual(h.calls, ['One', 'Two']);
+  assert.equal(group.icon.getAttribute('data-translation-state'), 'done');
+});
+
+test('group progress stays loading and toggling during translation applies to subsequent messages', async () => {
+  const h = groupedDiscord([['One', true], ['Two', false]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  let finish, progress;
+  h.translator.translateText = (text, callback) => {
+    h.calls.push(text);
+    if (text === 'Two') return Promise.resolve('Dva');
+    progress = callback;
+    return new Promise(resolve => { finish = resolve; });
+  };
+  const pending = h.translator.translateMessageGroup(group);
+  progress('Je');
+  await h.translator.translateMessageGroup(group);
+  assert.deepEqual(h.calls, ['One']);
+  finish('Jedna');
+  await pending;
+  assert.deepEqual(h.calls, ['One', 'Two']);
+  for (const state of h.translator.messageTranslations.values()) {
+    assert.equal(state.showingTranslation, false);
+    assert.equal(state.translatedElement.hidden, true);
+  }
+  assert.equal(group.icon.getAttribute('data-translation-state'), 'done');
+});
+
+test('a failed group message can be retried without removing the icon or retranslating successful messages', async () => {
+  const h = groupedDiscord([['One', true], ['Two', false], ['Three', false]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  let fail = true;
+  h.translator.translateText = async (text, progress) => {
+    h.calls.push(text);
+    if (text === 'Two' && fail) { progress('Partial'); throw new Error('Offline'); }
+    return `Translated: ${text}`;
+  };
+  await h.translator.translateMessageGroup(group);
+  assert.equal(group.container.isConnected, true);
+  assert.equal(group.icon.getAttribute('data-translation-state'), 'error');
+  assert.equal(h.messages[1].style.getPropertyValue('display'), '');
+  fail = false;
+  await h.translator.translateMessageGroup(group);
+  assert.deepEqual(h.calls, ['One', 'Two', 'Three', 'Two']);
+  assert.equal(group.icon.getAttribute('data-translation-state'), 'done');
+});
+
+test('a channel change stops a group queue and discards the pending result', async () => {
+  const h = groupedDiscord([['One', true], ['Two', false]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  let finish;
+  h.translator.translateText = text => {
+    h.calls.push(text);
+    return new Promise(resolve => { finish = resolve; });
+  };
+  const pending = h.translator.translateMessageGroup(group);
+  h.translator.stateRevision++;
+  h.translator.cleanupTranslations();
+  finish('Stale');
+  await pending;
+  assert.deepEqual(h.calls, ['One']);
+  assert.equal(h.translator.messageTranslations.size, 0);
+  assert.equal(h.translator.translationCache.size, 0);
+});
+
+test('scrolling moves the one group icon to a visible message and preserves its translations', async () => {
+  const h = groupedDiscord([['One', true], ['Two', false]]);
+  h.messages[0].visible = false;
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  assert.equal(group.container.parentElement, h.rows[1]);
+  await h.translator.translateMessageGroup(group);
+  await h.translator.translateMessageGroup(group);
+  h.messages[0].visible = true;
+  h.messages[1].visible = false;
+  await h.translator.addGroupedFlagIcons(h.messages);
+  assert.equal(group.container.parentElement, h.rows[0]);
+  assert.equal(h.translator.messageGroups.size, 1);
+  assert.equal(h.translator.messageTranslations.size, 2);
+  for (const state of h.translator.messageTranslations.values()) assert.equal(state.showingTranslation, false);
+});
+
+test('editing a message while its group request is running discards the stale result', async () => {
+  const h = groupedDiscord([['One', true], ['Two', false]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  let finish;
+  h.translator.translateText = text => text === 'Two' ? Promise.resolve('Dva') :
+    new Promise(resolve => { finish = resolve; });
+  const pending = h.translator.translateMessageGroup(group);
+  h.messages[0].textContent = 'Edited';
+  finish('Old text');
+  await pending;
+  assert.equal(h.translator.messageTranslations.has(h.messages[0].id), false);
+  assert.equal(h.translator.translationCache.has('One'), false);
+  assert.equal(h.translator.messageTranslations.get(h.messages[1].id).translation, 'Dva');
+});

@@ -237,6 +237,7 @@ class DiscordTranslator {
     this.translationCache = new Map(); // text -> translation (persistent across channels)
     this.processedMessages = new Set(); // Set of message IDs that have been processed (cleared on channel change)
     this.messageTranslations = new Map(); // messageId -> { element, translatedElement, originalDisplay, icon, ... }
+    this.messageGroups = new Map(); // Discord header row -> shared translation control
     this.PROCESSED_ATTRIBUTE = 'discord-translator-processed';
     this.TRANSLATION_CLASS = 'discord-translator-translation';
     this.FLAG_ICON_CLASS = 'discord-translator-flag-icon';
@@ -689,6 +690,7 @@ class DiscordTranslator {
     const newChannelId = this.getCurrentChannelId();
 
     if (this.currentChannelId !== newChannelId) {
+      this.stateRevision = (this.stateRevision || 0) + 1;
       logger.log(`📺 Channel changed: ${this.currentChannelId || 'none'} → ${newChannelId}`);
 
       // Discord may reuse the original nodes when returning to a channel.
@@ -703,6 +705,138 @@ class DiscordTranslator {
     }
 
     return false; // Same channel
+  }
+
+  /**
+   * Keep Discord's consecutive messages under one header as one control, while
+   * retaining separate translation state and API requests for every message.
+   */
+  collectMessageGroups(allMessages) {
+    const byRow = new Map();
+    for (const element of allMessages) {
+      if (this.shouldSkipMessage(element) || !element.textContent.trim()) continue;
+      const row = element.closest('[id^="chat-messages-"]');
+      if (!row) continue;
+      if (!byRow.has(row)) byRow.set(row, []);
+      const messages = byRow.get(row);
+      if (!messages.some(message => this.getMessageId(message) === this.getMessageId(element))) {
+        messages.push(element);
+      }
+    }
+    const groups = new Map();
+    let key = null;
+    let list = null;
+    // Include attachment-only rows: their author headers still start a new block.
+    for (const row of document.querySelectorAll('[id^="chat-messages-"]')) {
+      if (row.parentElement !== list ||
+          row.matches?.('[class*="groupStart"]') ||
+          row.querySelector('[id^="message-username-"], [class*="groupStart"]') || !key) {
+        key = row;
+        list = row.parentElement;
+      }
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(...(byRow.get(row) || []));
+    }
+    return groups;
+  }
+
+  async addGroupedFlagIcons(allMessages) {
+    const groups = this.collectMessageGroups(allMessages);
+    for (const [key, group] of this.messageGroups) {
+      if (!groups.get(key)?.length) {
+        group.container.remove();
+        this.messageGroups.delete(key);
+      }
+    }
+    for (const [key, messages] of groups) {
+      if (!messages.length) continue;
+      let group = this.messageGroups.get(key);
+      const translatable = new Set(messages.filter(element => this.extractCleanText(element)));
+      if (!translatable.size) {
+        group?.container.remove();
+        this.messageGroups.delete(key);
+        continue;
+      }
+      // Put the one control beside a visible message, even when the header is
+      // above the viewport. Translated originals themselves have display:none.
+      const anchor = messages.find(element => {
+        const state = this.messageTranslations.get(this.getMessageId(element));
+        return this.isElementVisible(state?.showingTranslation ? state.translatedElement : element);
+      });
+      if (!group && !anchor) continue;
+      if (!group) {
+        const container = this.createFlagIcon(anchor, this.getMessageId(anchor));
+        if (!container) continue;
+        group = { container, icon: container.firstElementChild, messages,
+          running: false, showingTranslation: true, error: false };
+        group.icon.translationGroup = group;
+        this.messageGroups.set(key, group);
+      }
+      group.messages = messages;
+      group.translatable = translatable;
+      if (anchor && (group.container.parentElement !== anchor.parentElement || !group.container.isConnected)) {
+        anchor.parentElement.insertBefore(group.container, anchor.nextSibling);
+      }
+      for (const element of messages) {
+        const state = this.messageTranslations.get(this.getMessageId(element));
+        if (state) {
+          state.icon = group.icon;
+          this.setTranslationVisible(state, group.showingTranslation);
+        }
+      }
+      this.refreshGroupIcon(group);
+    }
+  }
+
+  refreshGroupIcon(group) {
+    const complete = group.messages.every(element =>
+      this.messageTranslations.get(this.getMessageId(element))?.complete || !group.translatable.has(element));
+    this.setFlagStatus(group.icon, group.running ? 'loading' : group.error ? 'error' : complete ? 'done' : 'idle');
+    group.icon.classList.toggle('translated', group.showingTranslation && complete);
+    group.icon.title = group.running ? 'Translating messages… Click to toggle originals' :
+      group.error ? 'Some messages failed. Click to retry.' :
+      !complete ? 'Translate messages in this group' :
+      group.showingTranslation ? 'Show originals' : 'Show translations';
+    group.icon.setAttribute('aria-label', group.icon.title);
+    group.icon.setAttribute('aria-pressed', String(group.showingTranslation &&
+      group.messages.some(element => this.messageTranslations.has(this.getMessageId(element)))));
+  }
+
+  async translateMessageGroup(group) {
+    if (!this.isActive || this.context.isInvalid) return;
+    const pending = group.messages.filter(element =>
+      !this.messageTranslations.get(this.getMessageId(element))?.complete && group.translatable.has(element));
+    if (group.running || !pending.length) {
+      group.showingTranslation = !group.showingTranslation;
+      for (const element of group.messages) {
+        const state = this.messageTranslations.get(this.getMessageId(element));
+        if (state && !this.isMessageBeingEdited(element)) this.setTranslationVisible(state, group.showingTranslation);
+      }
+      this.refreshGroupIcon(group);
+      return;
+    }
+    group.running = true;
+    group.error = false;
+    group.showingTranslation = true;
+    for (const element of group.messages) {
+      const state = this.messageTranslations.get(this.getMessageId(element));
+      if (state) this.setTranslationVisible(state, true);
+    }
+    const revision = this.stateRevision;
+    this.refreshGroupIcon(group);
+    try {
+      for (const element of pending) {
+        if (!this.isActive || this.context.isInvalid || revision !== this.stateRevision ||
+            !group.container.isConnected) break;
+        if (!element.isConnected || this.isMessageBeingEdited(element)) continue;
+        await this.translateSingleMessage(element, this.getMessageId(element), group.icon, true);
+        if (!this.messageTranslations.get(this.getMessageId(element))?.complete) group.error = true;
+        this.refreshGroupIcon(group);
+      }
+    } finally {
+      group.running = false;
+      this.refreshGroupIcon(group);
+    }
   }
 
   /**
@@ -1034,7 +1168,11 @@ class DiscordTranslator {
     flagIcon.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.translateSingleMessage(messageElement, messageId, flagIcon);
+      if (flagIcon.translationGroup) {
+        void this.translateMessageGroup(flagIcon.translationGroup);
+      } else {
+        void this.translateSingleMessage(messageElement, messageId, flagIcon);
+      }
     });
     
     flagContainer.appendChild(flagIcon);
@@ -1044,16 +1182,18 @@ class DiscordTranslator {
   /**
    * Translate a single message when flag is clicked
    */
-  async translateSingleMessage(messageElement, messageId, flagIcon) {
+  async translateSingleMessage(messageElement, messageId, flagIcon, fromGroup = false) {
     if (this.isActive === false || this.context?.isInvalid) return;
     const revision = this.stateRevision;
+    const originalText = messageElement.textContent;
     const isCurrent = () => this.isActive !== false && revision === this.stateRevision &&
-      !this.context?.isInvalid;
+      !this.context?.isInvalid && (!fromGroup || (messageElement.isConnected &&
+        messageElement.textContent === originalText && !this.isMessageBeingEdited(messageElement)));
     if (this.messageTranslations.has(messageId)) {
       this.toggleTranslation(messageId);
       return;
     }
-    if (flagIcon.classList.contains('translating')) return;
+    if (!fromGroup && flagIcon.classList.contains('translating')) return;
     try {
       logger.log(`🔄 Translating message on demand [${messageId}]`);
       
@@ -1223,6 +1363,8 @@ class DiscordTranslator {
   }
 
   setTranslationVisible(state, showTranslation) {
+    const group = state.icon?.translationGroup;
+    if (group) showTranslation = group.showingTranslation;
     if (showTranslation) {
       state.element.style.setProperty('display', 'none', 'important');
       state.translatedElement.hidden = false;
@@ -1235,6 +1377,10 @@ class DiscordTranslator {
       state.translatedElement.hidden = true;
     }
     state.showingTranslation = showTranslation;
+    if (group) {
+      this.refreshGroupIcon(group);
+      return;
+    }
     if (state.icon) {
       this.setFlagStatus(state.icon, state.complete ? 'done' : 'loading');
       state.icon.classList.toggle('translated', showTranslation);
@@ -1265,7 +1411,7 @@ class DiscordTranslator {
       state.element.style.removeProperty('display');
     }
     state.translatedElement.remove();
-    if (removeIcon) state.icon?.closest(`.${this.FLAG_CONTAINER_CLASS}`)?.remove();
+    if (removeIcon && !state.icon?.translationGroup) state.icon?.closest(`.${this.FLAG_CONTAINER_CLASS}`)?.remove();
   }
 
   cleanupTranslations() {
@@ -1273,6 +1419,7 @@ class DiscordTranslator {
       this.restoreTranslation(state);
     }
     this.messageTranslations.clear();
+    this.messageGroups?.clear();
     document.querySelectorAll(`.${this.FLAG_CONTAINER_CLASS}`).forEach(icon => icon.remove());
   }
 
@@ -1337,7 +1484,7 @@ class DiscordTranslator {
 
     // If manual translation mode is enabled, add flag icons instead of auto-translating
     if (CONFIG.MANUAL_TRANSLATION) {
-      await this.addFlagIcons(allMessages);
+      await this.addGroupedFlagIcons(allMessages);
       return;
     }
 
