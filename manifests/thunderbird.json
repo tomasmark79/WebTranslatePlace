@@ -27,8 +27,8 @@
   "commands": {
     "translate-selection": {
       "suggested_key": {
-        "default": "Ctrl+Alt+S",
-        "mac": "Command+Alt+S"
+        "default": "Ctrl+Alt+E",
+        "mac": "Command+Alt+E"
       },
       "description": "TranslatePlace: translate into language 1"
     },

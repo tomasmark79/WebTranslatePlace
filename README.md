@@ -48,7 +48,7 @@ Safari and GNOME Web are prepared build targets. Their installation, shortcut di
 
 Build with `python3 scripts/build.py thunderbird`. In Thunderbird, open **Add-ons and Themes**, use the gear menu's **Install Add-on From File**, and choose `dist/webtranslateplace-thunderbird-0.1.0.xpi`. For temporary development loading, use **Debug Add-ons → Load Temporary Add-on** and select `dist/thunderbird/manifest.json`.
 
-- **Writing an email:** select text in the message body and press **Ctrl+Alt+S** (**Command+Option+S** on macOS). The completed translation replaces only that selection after saving its original locally. Changed selections and drafts are left untouched. Both HTML and plain-text compose bodies are handled; subject and recipient fields are outside this integration.
+- **Writing an email:** select text in the message body and press **Ctrl+Alt+E** (**Command+Option+E** on macOS). The completed translation replaces only that selection after saving its original locally. Changed selections and drafts are left untouched. Both HTML and plain-text compose bodies are handled; subject and recipient fields are outside this integration.
 - **Reading an email:** select text in the message body and use the same shortcut. The translation appears in a separate, closable panel. The original message stays intact, and the stored email is never modified. Only the selected text is sent to the API.
 - **Settings and history:** use the extension button in the main, compose or message toolbar. API settings and the retained original draft selections and their completed translations are shared inside the Thunderbird installation. Discord controls are hidden; browser extension settings are not imported.
 
