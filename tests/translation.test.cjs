@@ -446,3 +446,11 @@ test('hotový překlad z cache má fajfku a žádnou nekonečnou SVG animaci', a
   assert.equal(icon.getAttribute('data-translation-state'), 'done');
   assert.doesNotMatch(icon.innerHTML, /<animate/);
 });
+
+
+test('Discord uses the selected target and automatic source detection', async () => {
+  const { context, requests } = load([envelope(job), envelope({ status: 'done', translatedText: 'Hallo' })]);
+  context[apiNamespace].storage.local.get = async () => ({ translationTarget: 'de' });
+  assert.equal(await context.service.translate('Hello'), 'Hallo');
+  assert.deepEqual(JSON.parse(requests[0].args[1].body), { q: 'Hello', source: 'auto', target: 'de' });
+});

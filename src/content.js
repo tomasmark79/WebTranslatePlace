@@ -30,8 +30,6 @@ const CONFIG = {
   API_DELAY_MS: 50,                   // Delay between translation requests
   UPDATE_DEBOUNCE_MS: 150,            // Coalesce message/scroll changes
   MAX_CACHE_ENTRIES: 200,             // Bound retained translations per tab
-  TARGET_LANGUAGE: 'cs',              // Target language (Czech)
-  SOURCE_LANGUAGE: 'auto',            // Or a fixed language such as 'en' or 'eng_Latn'
   TRANSLATION_API_URL: 'http://127.0.0.1:5001', // Default; overridden by extension settings
   TRANSLATION_TIMEOUT_MS: 180000,      // Total timeout including queue time
   POLL_INTERVAL_MS: 500,
@@ -128,11 +126,11 @@ class TranslationService {
 
   static async translate(text, onProgress) {
     // Keep submission and polling on the same server, even if settings change.
-    const stored = await extensionApi.storage.local.get('translationApiUrl');
+    const stored = await extensionApi.storage.local.get(['translationApiUrl', 'translationTarget']);
     const apiUrl = stored.translationApiUrl || CONFIG.TRANSLATION_API_URL;
     const deadline = Date.now() + CONFIG.TRANSLATION_TIMEOUT_MS;
     let response = await this.request('/translate', {
-      q: text, source: CONFIG.SOURCE_LANGUAGE, target: CONFIG.TARGET_LANGUAGE
+      q: text, source: 'auto', target: stored.translationTarget || 'cs'
     }, apiUrl);
     const jobId = response.jobId;
     if (typeof jobId !== 'string' || !/^[a-f0-9]{32}$/.test(jobId)) {
@@ -397,7 +395,7 @@ class DiscordTranslator {
     logger.log(`  Debug Enabled: ${CONFIG.DEBUG_ENABLED}`);
     logger.log(`  Debug Verbose: ${CONFIG.DEBUG_VERBOSE}`);
     logger.log(`  Debug API: ${CONFIG.DEBUG_API_REQUESTS}`);
-    logger.log(`  Target Language: ${CONFIG.TARGET_LANGUAGE}`);
+    logger.log('  Target Language: configured in extension settings');
     logger.log(`  API Delay: ${CONFIG.API_DELAY_MS}ms`);
     logger.log(`  Update debounce: ${CONFIG.UPDATE_DEBOUNCE_MS}ms`);
     logger.log(`  Debug Styling: ${CONFIG.DEBUG_STYLING ? 'ON (yellow+red)' : 'OFF (subtle gray)'}`);
@@ -406,6 +404,13 @@ class DiscordTranslator {
 
     // Apply setting changes to all open Discord tabs.
     const onSettingsChanged = (changes, area) => {
+      if (area === 'local' && changes.translationTarget &&
+          changes.translationTarget.newValue !== changes.translationTarget.oldValue && !this.context?.isInvalid) {
+        this.translationCache.clear();
+        const active = this.isActive;
+        this.setActive(false);
+        if (active) this.setActive(true);
+      }
       if (area === 'local' && changes.translatorActive && !this.context?.isInvalid) {
         this.setActive(changes.translatorActive.newValue !== false);
       }
@@ -880,7 +885,7 @@ class DiscordTranslator {
   }
 
   /**
-   * Create and insert a clickable Czech flag icon next to a message
+   * Create and insert a clickable translation icon next to a message
    */
   createFlagIcon(messageElement, messageId) {
     try {
@@ -1015,7 +1020,7 @@ class DiscordTranslator {
     
     const flagIcon = document.createElement('button');
     flagIcon.className = this.FLAG_ICON_CLASS;
-    flagIcon.title = 'Translate into Czech';
+    flagIcon.title = 'Translate message';
     flagIcon.setAttribute('aria-label', flagIcon.title);
     flagIcon.setAttribute('aria-pressed', 'false');
     flagIcon.setAttribute('data-message-id', messageId);

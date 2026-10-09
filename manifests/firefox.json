@@ -21,7 +21,7 @@
         "default": "Ctrl+Alt+S",
         "mac": "Command+Alt+S"
       },
-      "description": "Translate selected Czech text into English"
+      "description": "Translate selected text into your chosen language"
     }
   }
 }

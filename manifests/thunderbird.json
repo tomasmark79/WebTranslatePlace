@@ -1,6 +1,6 @@
 {
   "manifest_version": 2,
-  "description": "Translate selected email text into Czech and Czech email drafts into English",
+  "description": "Translate selected email text and drafts into your chosen language",
   "permissions": [
     "storage",
     "compose",

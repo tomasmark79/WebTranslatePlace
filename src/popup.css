@@ -34,7 +34,7 @@ header p, footer { color: var(--muted); font-size: 12px; }
 .toggle-row input:disabled { opacity: .5; cursor: default; }
 #discord-status:not(:empty) { margin-top: 8px; color: var(--accent); }
 #api-settings label { display: block; margin-bottom: 6px; }
-#api-url, #history-limit { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px;
+#api-url, #history-limit, #translation-target { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px;
   color: var(--text); background: var(--field);
   border: 1px solid var(--border); border-radius: 5px; font: inherit; }
 #api-status { color: var(--accent); }
@@ -55,13 +55,14 @@ button { padding: 5px 10px; border: 1px solid var(--border); border-radius: 5px;
 button:hover:not(:disabled) { background: var(--button-hover); border-color: var(--focus); }
 #api-save { background: var(--accent); color: var(--primary-text); border-color: var(--accent); }
 #api-save:hover:not(:disabled) { box-shadow: 0 0 0 2px var(--border); }
-button:focus-visible, input:focus-visible, textarea:focus-visible {
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
   outline: 2px solid var(--focus); outline-offset: 2px;
 }
 footer { border-top: 1px solid var(--border); }
 .settings-fields { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 10px; align-items: end; }
 .settings-fields > div { min-width: 0; }
-#history-help { margin-top: 6px; color: var(--muted); font-size: 12px; }
+#api-settings .target-label { margin-top: 10px; }
+#history-help, #target-help { margin-top: 6px; color: var(--muted); font-size: 12px; }
 .footer-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 [hidden] { display: none !important; }
 #clear-confirmation p { overflow-wrap: anywhere; }

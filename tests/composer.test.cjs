@@ -45,7 +45,7 @@ function loadContent(editor, responses = []) {
     createElement: () => ({ style: {}, setAttribute() {}, remove() {} }),
     execCommand: () => false
   };
-  const chrome = { storage: { local: { get: async () => ({}) } }, runtime: {
+  const chrome = { storage: { local: { get: async () => ({ translationTarget: 'en' }) } }, runtime: {
     onMessage: { addListener: fn => { listener = fn; } },
     sendMessage: async request => {
       if (request.type === 'backup-save') {
@@ -101,7 +101,7 @@ test('Ctrl+A vybere český text a dokončený překlad ho nahradí bez odeslán
   assert.equal(field.events[0].type, 'input');
   assert.deepEqual(backups, ['Ahoj světe']);
   assert.deepEqual(JSON.parse(JSON.stringify(calls[0].body)), {
-    q: 'Ahoj světe', source: 'cs', target: 'en'
+    q: 'Ahoj světe', source: 'auto', target: 'en'
   });
   assert.equal(calls[1].path, `/translations/${JOB_ID}`);
   assert.equal(notices.length, 0);
@@ -430,26 +430,32 @@ test('limit historie se ukládá, odmítá neplatné hodnoty a řadí změny se 
     assert.equal((await send({ type: 'backup-save', text })).ok, true);
   }
   await Promise.all([
-    send({ type: 'settings-save', apiUrl: 'https://translator.example/api/', limit: 2 }),
+    send({ type: 'settings-save', target: 'cs', apiUrl: 'https://translator.example/api/', limit: 2 }),
     send({ type: 'backup-save', text: 'Čtvrtý' })
   ]);
   assert.equal(stored.historyLimit, 2);
+  assert.equal(stored.translationTarget, 'cs');
+  assert.equal((await send({ type: 'backup-list' })).target, 'cs');
   assert.equal(stored.translationApiUrl, 'https://translator.example/api');
   assert.deepEqual(Array.from(stored.originalTexts, entry => entry.text), ['Čtvrtý', 'Třetí']);
   const before = JSON.stringify(stored);
+  for (const target of ['auto', 'unknown', '', null]) {
+    assert.equal((await send({ type: 'settings-save', target, apiUrl: 'https://translator.example/api/', limit: 2 })).ok, false);
+    assert.equal(JSON.stringify(stored), before);
+  }
   for (const apiUrl of ['invalid', 'file:///tmp/api', 'https://user:secret@example.com']) {
-    assert.equal((await send({ type: 'settings-save', apiUrl, limit: 1 })).ok, false);
+    assert.equal((await send({ type: 'settings-save', target: 'cs', apiUrl, limit: 1 })).ok, false);
     assert.equal(JSON.stringify(stored), before);
   }
   for (const limit of [0, -1, 1001, 1.5, '5', null]) {
-    assert.equal((await send({ type: 'settings-save', apiUrl: 'https://translator.example/api/', limit })).ok, false);
+    assert.equal((await send({ type: 'settings-save', target: 'cs', apiUrl: 'https://translator.example/api/', limit })).ok, false);
     assert.equal(JSON.stringify(stored), before);
   }
   failWrite = true;
-  assert.equal((await send({ type: 'settings-save', apiUrl: 'https://translator.example/api/', limit: 1 })).ok, false);
+  assert.equal((await send({ type: 'settings-save', target: 'cs', apiUrl: 'https://translator.example/api/', limit: 1 })).ok, false);
   assert.equal(JSON.stringify(stored), before);
   failWrite = false;
-  assert.equal((await send({ type: 'settings-save', apiUrl: 'https://translator.example/api/', limit: 1000 })).ok, true);
+  assert.equal((await send({ type: 'settings-save', target: 'cs', apiUrl: 'https://translator.example/api/', limit: 1000 })).ok, true);
   assert.equal((await send({ type: 'backup-list' })).limit, 1000);
   await send({ type: 'backup-save', text: 'Pátý' });
   assert.equal(stored.originalTexts.length, 3);
@@ -474,7 +480,7 @@ test('okno rozšíření zpřístupní uložený text ke kopírování', async (
   const nodes = { entries, status, clear, 'toggle-history': element(), 'history-visibility': element(),
     'clear-summary': element(), 'clear-confirmation': element(),
     'clear-cancel': element(), 'clear-confirm': element(), 'api-settings': element(),
-    'history-limit': element(), 'history-count': element(),
+    'history-limit': element(), 'history-count': element(), 'translation-target': element(),
     'discord-enabled': element(), 'discord-status': element(),
     'api-url': element(), 'api-save': element(), 'api-reset': element(), 'api-status': element() };
   const copied = [];
@@ -557,9 +563,9 @@ test('nastavení funguje bez permissions API, odmítne neplatné URL a obnoví v
       runtime: { sendMessage: async message => {
         if (message.type === 'settings-save') {
           if (storageFailure) return { ok: false, body: { error: 'Storage is full.' } };
-          Object.assign(stored, { translationApiUrl: message.apiUrl, historyLimit: message.limit });
+          Object.assign(stored, { translationApiUrl: message.apiUrl, historyLimit: message.limit, translationTarget: message.target });
         }
-        return { ok: true, entries: [], limit: stored.historyLimit ?? 50 };
+        return { ok: true, entries: [], limit: stored.historyLimit ?? 50, target: stored.translationTarget ?? 'cs' };
       } },
       storage: { local: {
         get: async () => stored,
@@ -593,16 +599,20 @@ test('nastavení funguje bez permissions API, odmítne neplatné URL a obnoví v
   assert.match(nodes['api-status'].textContent, /Storage is full/);
   storageFailure = false;
   nodes['history-limit'].value = 7;
+  nodes['translation-target'].value = 'de';
   await submit(stored.translationApiUrl);
+  assert.equal(stored.translationTarget, 'de');
   await nodes['api-reset'].listeners.click();
   assert.equal(stored.historyLimit, 7);
   assert.equal(nodes['history-limit'].value, 50);
+  assert.equal(nodes['translation-target'].value, 'cs');
   assert.equal(nodes['api-reset'].hidden, true);
   assert.equal(stored.translationApiUrl, 'https://translator.example:8443/api');
   assert.equal(nodes['api-url'].value, 'http://127.0.0.1:5001');
   await submit(nodes['api-url'].value);
   assert.equal(stored.translationApiUrl, 'http://127.0.0.1:5001');
   assert.equal(stored.historyLimit, 50);
+  assert.equal(stored.translationTarget, 'cs');
   assert.equal(nodes['api-url'].value, stored.translationApiUrl);
   assert.equal(nodes['api-save'].disabled, false);
 });
@@ -646,4 +656,26 @@ test('oba skripty mohou běžet v Discordu bez kolize a bez převzetí cizích z
   assert.equal(listener(JSON.stringify({ type: 'stateChanged', args: [false] }), {}, () => replies++), true);
   assert.equal(context.discordActive, false);
   assert.equal(replies, 1);
+});
+
+
+test('Drafts detect the source automatically and freeze the chosen target for the job', async () => {
+  const h = loadContent(textarea('Hello'), [
+    { ok: true, body: { status: 'pending', jobId: JOB_ID } },
+    { ok: true, body: { status: 'done', translatedText: 'Hallo' } }
+  ]);
+  let target = 'de';
+  h.context[apiNamespace].storage.local.get = async () => ({ translationTarget: target });
+  const send = h.context[apiNamespace].runtime.sendMessage;
+  const backups = [];
+  h.context[apiNamespace].runtime.sendMessage = message => {
+    if (message.type === 'backup-save') backups.push(message);
+    if (message.type === 'translation-request') target = 'fr';
+    return send(message);
+  };
+  await vm.runInContext('translateSelection()', h.context);
+  assert.equal(backups[0].target, 'de');
+  assert.equal(h.calls[0].body.source, 'auto');
+  assert.equal(h.calls[0].body.target, 'de');
+  assert.equal(h.completedBackups[0].translatedText, 'Hallo');
 });

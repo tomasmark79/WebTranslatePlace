@@ -16,7 +16,7 @@ async function translateReceivedSelection() {
   translating = true;
   const panel = document.createElement('aside');
   panel.setAttribute('role', 'region');
-  panel.setAttribute('aria-label', 'Translation into Czech');
+  panel.setAttribute('aria-label', 'Translation');
   panel.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;' +
     'padding:16px;background:#014380;color:white;border:1px solid #2397ff;' +
     'border-radius:8px;font:14px sans-serif;width:420px;max-width:80vw;max-height:60vh;overflow:auto;';
@@ -32,7 +32,7 @@ async function translateReceivedSelection() {
   document.documentElement.appendChild(panel);
   try {
     // Translation stays separate from the original and never changes stored mail.
-    result.textContent = await translate(text, 'auto', 'cs');
+    result.textContent = await translate(text);
   } catch (error) {
     result.textContent = error.message;
   } finally {

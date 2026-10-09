@@ -87,9 +87,19 @@ test('Thunderbird designMode compose selection saves original and uses native ed
   await vm.runInContext('translateSelection()', h.context);
   assert.equal(messages[0].type, 'backup-save');
   assert.equal(messages[0].text, 'Ahoj');
-  assert.equal(messages[1].body.target, 'en');
+  assert.equal(messages[1].body.source, 'auto');
+  assert.equal(messages[1].body.target, 'cs');
   assert.equal(messages[2].type, 'backup-complete');
   assert.equal(messages[2].id, 'mail-draft');
   assert.equal(messages[2].translatedText, 'Hello');
   assert.equal(body.textContent, 'Hello');
+});
+
+
+test('Received mail uses the chosen target language', async () => {
+  const h = mailContext();
+  h.context.browser.storage.local.get = async () => ({ translationTarget: 'de' });
+  await vm.runInContext('translateReceivedSelection()', h.context);
+  assert.equal(h.requests[0].body.source, 'auto');
+  assert.equal(h.requests[0].body.target, 'de');
 });

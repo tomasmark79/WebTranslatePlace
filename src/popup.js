@@ -18,6 +18,7 @@ const apiStatus = document.getElementById('api-status');
 const discordToggle = document.getElementById('discord-enabled');
 const discordStatus = document.getElementById('discord-status');
 const historyField = document.getElementById('history-limit');
+const targetField = document.getElementById('translation-target');
 const historyCount = document.getElementById('history-count');
 
 composerApi.storage.local.get('translatorActive').then(stored => {
@@ -46,15 +47,16 @@ function updateSettingsControls() {
   apiSave.disabled = !apiReady || !historyReady || savingSettings;
   apiReset.disabled = apiSave.disabled;
   apiField.disabled = savingSettings;
-  historyField.disabled = !historyReady || savingSettings;
+  historyField.disabled = targetField.disabled = !historyReady || savingSettings;
   let defaultApi = false;
   try { defaultApi = API_SETTINGS.normalize(apiField.value) === API_SETTINGS.defaultUrl; }
   catch { /* Invalid input differs from the defaults. */ }
-  apiReset.hidden = !apiReady || !historyReady || (defaultApi && Number(historyField.value) === 50);
+  apiReset.hidden = !apiReady || !historyReady || (defaultApi && Number(historyField.value) === 50 && targetField.value === 'cs');
 }
 
 apiField.addEventListener('input', updateSettingsControls);
 historyField.addEventListener('input', updateSettingsControls);
+targetField.addEventListener('input', updateSettingsControls);
 
 apiForm.addEventListener('submit', async event => {
   event.preventDefault();
@@ -67,7 +69,7 @@ apiForm.addEventListener('submit', async event => {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
       throw new Error('Enter a whole number from 1 to 1,000.');
     }
-    await backupRequest('settings-save', { apiUrl, limit });
+    await backupRequest('settings-save', { apiUrl, limit, target: targetField.value });
     apiField.value = apiUrl;
     await render();
     apiStatus.textContent = 'Settings saved.';
@@ -81,6 +83,7 @@ apiForm.addEventListener('submit', async event => {
 apiReset.addEventListener('click', () => {
   apiField.value = API_SETTINGS.defaultUrl;
   historyField.value = 50;
+  targetField.value = 'cs';
   apiStatus.textContent = 'Default values are ready. Click Save to apply them.';
   updateSettingsControls();
   apiSave.focus();
@@ -104,8 +107,11 @@ function status(message) {
 }
 
 async function render() {
-  const { entries, limit = 50 } = await backupRequest('backup-list');
-  if (!historyReady || savingSettings) historyField.value = limit;
+  const { entries, limit = 50, target = 'cs' } = await backupRequest('backup-list');
+  if (!historyReady || savingSettings) {
+    historyField.value = limit;
+    targetField.value = target;
+  }
   historyReady = true;
   updateSettingsControls();
   historyCount.textContent = `Saved: ${entries.length} / ${limit}`;
@@ -125,6 +131,8 @@ async function render() {
     const article = document.createElement('article');
     const heading = document.createElement('p');
     heading.textContent = `${new Date(entry.createdAt).toLocaleString('en-GB')} · ${entry.site || 'Website'}`;
+    const language = Array.from(targetField.options || []).find(option => option.value === entry.targetLanguage);
+    if (language) heading.textContent += ` · ${language.textContent}`;
     const actions = document.createElement('div');
     actions.className = 'actions';
     article.append(heading);

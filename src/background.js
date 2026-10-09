@@ -33,6 +33,11 @@ const API_SETTINGS = {
 const BACKUPS_KEY = 'originalTexts';
 const HISTORY_LIMIT_KEY = 'historyLimit';
 const DEFAULT_HISTORY_LIMIT = 50;
+const DEFAULT_TARGET = 'cs';
+const TARGET_LANGUAGES = new Set('af ar bg bn ca cs cy da de el en es et fa fi fr gu he hi hr hu id it ja kn ko lt lv mk ml mr ne nl no pa pl pt ro ru sk sl so sq sv sw ta te th tl tr uk ur vi zh-cn zh-tw'.split(' '));
+function translationTarget(stored) {
+  return TARGET_LANGUAGES.has(stored.translationTarget) ? stored.translationTarget : DEFAULT_TARGET;
+}
 function validHistoryLimit(value) {
   return Number.isInteger(value) && value >= 1 && value <= 1000;
 }
@@ -50,17 +55,19 @@ function queueBackupChange(change) {
 async function backupMessage(message, sender) {
   if (message.type === 'backup-list') {
     await backupQueue;
-    const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY]);
-    return { ok: true, entries: stored[BACKUPS_KEY] || [], limit: historyLimit(stored) };
+    const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY, 'translationTarget']);
+    return { ok: true, entries: stored[BACKUPS_KEY] || [], limit: historyLimit(stored), target: translationTarget(stored) };
   }
   return queueBackupChange(async () => {
-    const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY]);
+    const stored = await composerApi.storage.local.get([BACKUPS_KEY, HISTORY_LIMIT_KEY, 'translationTarget']);
     const entries = stored[BACKUPS_KEY] || [];
     if (message.type === 'settings-save') {
       if (!validHistoryLimit(message.limit)) throw new Error('Enter a whole number from 1 to 1,000.');
       const apiUrl = API_SETTINGS.normalize(message.apiUrl);
+      if (!TARGET_LANGUAGES.has(message.target)) throw new Error('Select a supported target language.');
       await composerApi.storage.local.set({
         [API_SETTINGS.key]: apiUrl,
+        translationTarget: message.target,
         [HISTORY_LIMIT_KEY]: message.limit,
         [BACKUPS_KEY]: entries.slice(0, message.limit)
       });
@@ -69,10 +76,12 @@ async function backupMessage(message, sender) {
     if (message.type === 'backup-save') {
       if (typeof message.text !== 'string' || !message.text.trim() ||
           message.text.length > 10000) throw new Error('Invalid text for backup.');
+      const target = message.target ?? DEFAULT_TARGET;
+      if (!TARGET_LANGUAGES.has(target)) throw new Error('Select a supported target language.');
       let site = '';
       try { site = new URL(sender.url).hostname; } catch { /* Frame without a regular URL. */ }
       const entry = {
-        id: crypto.randomUUID(), text: message.text, site,
+        id: crypto.randomUUID(), text: message.text, site, targetLanguage: target,
         createdAt: Date.now()
       };
       await composerApi.storage.local.set({ [BACKUPS_KEY]: [entry, ...entries].slice(0, historyLimit(stored)) });

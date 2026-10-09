@@ -1,9 +1,9 @@
 # WebTranslatePlace
 
-WebTranslatePlace combines Discord message translation with Czech-to-English draft translation in one browser extension. It uses shared sources for Chrome/Chromium (including Edge, Brave and other Chromium browsers), Firefox, Safari, GNOME Web (Epiphany) and Thunderbird.
+WebTranslatePlace combines Discord message translation with selected-draft translation in one browser extension. It uses shared sources for Chrome/Chromium (including Edge, Brave and other Chromium browsers), Firefox, Safari, GNOME Web (Epiphany) and Thunderbird. Source language is detected automatically; **Target language** selects the output for all features (Czech by default).
 
-- **Discord messages → Czech:** click the translation icon beside a message. Translation appears progressively; click again to restore the original. The icon pulses only while translating and shows a static blue check mark after completion, including when viewing the original. Original colors and typography are preserved. Messages being edited and the composer are excluded.
-- **Selected Czech draft → English:** select text in a text input, textarea or contenteditable editor and press **Ctrl+Alt+S in Firefox** (**Command+Option+S** on macOS), or **Shift+Alt+S** in other browsers (**Shift+Option+S** on macOS). This includes Discord's composer. The extension waits for the complete translation, replaces only the selected text, and never sends the message.
+- **Discord messages:** click the translation icon beside a message. Translation appears progressively; click again to restore the original. The icon pulses only while translating and shows a static blue check mark after completion, including when viewing the original. Original colors and typography are preserved. Messages being edited and the composer are excluded.
+- **Selected drafts:** select text in a text input, textarea or contenteditable editor and press **Ctrl+Alt+S in Firefox** (**Command+Option+S** on macOS), or **Shift+Alt+S** in other browsers (**Shift+Option+S** on macOS). This includes Discord's composer. The extension waits for the complete translation, replaces only the selected text, and never sends the message.
 - **Translation history:** click the toolbar icon, then **Show history** to copy or delete the most recent selected drafts and their completed translations (50 by default, configurable from 1 to 1,000), with originals saved locally before translation starts and translations added when complete. **Copy original** and **Copy translation** copy either text separately. Older entries and failed translations retain the original only. The same window configures the API for both features. History starts hidden every time the popup opens; **Hide history** hides the list again.
 
 Discord translation support is enabled by default. Use **Discord translation** in the popup to turn it off or on. The setting is saved locally and applies to open Discord tabs immediately. Turning it off removes message translation icons and restores original messages; selected-draft translation remains available, including in Discord's composer.
@@ -48,8 +48,8 @@ Safari and GNOME Web are prepared build targets. Their installation, shortcut di
 
 Build with `python3 scripts/build.py thunderbird`. In Thunderbird, open **Add-ons and Themes**, use the gear menu's **Install Add-on From File**, and choose `dist/webtranslateplace-thunderbird-0.1.0.xpi`. For temporary development loading, use **Debug Add-ons → Load Temporary Add-on** and select `dist/thunderbird/manifest.json`.
 
-- **Writing an email:** select Czech text in the message body and press **Ctrl+Alt+S** (**Command+Option+S** on macOS). The completed English translation replaces only that selection after saving its original locally. Changed selections and drafts are left untouched. Both HTML and plain-text compose bodies are handled; subject and recipient fields are outside this integration.
-- **Reading an email:** select text in the message body and use the same shortcut. The Czech translation appears in a separate, closable panel. The original message stays intact, and the stored email is never modified. Only the selected text is sent to the API.
+- **Writing an email:** select text in the message body and press **Ctrl+Alt+S** (**Command+Option+S** on macOS). The completed translation replaces only that selection after saving its original locally. Changed selections and drafts are left untouched. Both HTML and plain-text compose bodies are handled; subject and recipient fields are outside this integration.
+- **Reading an email:** select text in the message body and use the same shortcut. The translation appears in a separate, closable panel. The original message stays intact, and the stored email is never modified. Only the selected text is sent to the API.
 - **Settings and history:** use the extension button in the main, compose or message toolbar. API settings and the retained original draft selections and their completed translations are shared inside the Thunderbird installation. Discord controls are hidden; browser extension settings are not imported.
 
 Reopen message and compose windows after installing or updating so their scripts are loaded. Shortcut assignments can be changed through **Manage Extension Shortcuts** in the add-on manager. This target uses Manifest V2 and Thunderbird's [composeScripts](https://webextension-api.thunderbird.net/en/esr-mv2/composeScripts.html) and [messageDisplayScripts](https://webextension-api.thunderbird.net/en/esr-mv2/messageDisplayScripts.html) APIs. The `compose` and `messagesModify` permissions allow scripts in the respective message bodies; HTTP/HTTPS permissions allow connecting to the configured API. No account enumeration, message database access or automatic sending is used.
@@ -58,16 +58,16 @@ Automated tests cover script registration, received-message translation, compose
 
 ## Connect an API
 
-The default API is `http://127.0.0.1:5001`. Click the toolbar icon, set **Translation API URL** and save. Use the base URL without `/translate`; HTTP, HTTPS, ports and path prefixes such as `https://example.com/api` are supported. Credentials, query parameters and fragments are rejected. Both features use the same saved address. Running jobs keep their original server; the next translation uses the new setting. **Defaults** fills in the default API address and a history limit of 50; press **Save** to apply both.
+The default API is `http://127.0.0.1:5001`. Click the toolbar icon, set **Translation API URL** and save. Use the base URL without `/translate`; HTTP, HTTPS, ports and path prefixes such as `https://example.com/api` are supported. Credentials, query parameters and fragments are rejected. Both features use the same saved address. Running jobs keep their original server; the next translation uses the new setting. **Defaults** fills in the default API address, a history limit of 50 and Czech as the target language; press **Save** to apply them.
 
-The manifest requests access to all URLs so selection translation can run in editors across websites and the background can reach your configured API. HTTP/HTTPS access is already covered by this required permission, so changing the API address does not request additional permissions. The extension sends only Discord messages, email selections and editor selections you explicitly request, using the configured server. There is no analytics or telemetry. Set **History limit** beside the API address in the popup to keep 1–1,000 history entries (default: 50; each original/translation pair counts as one entry). The shared **Save** button saves the API address and history limit together. Saving a lower limit immediately removes the oldest excess entries. The same limit applies to subsequent saves. Draft backups stay in local extension storage, are not synced or encrypted, and disappear when the extension is uninstalled. Each backup records the original text, timestamp and site hostname, and adds the translated text and completion time when translation succeeds. Results arriving after an entry is deleted or removed by the history limit do not recreate it. Browser-granted site restrictions still apply.
+The manifest requests access to all URLs so selection translation can run in editors across websites and the background can reach your configured API. HTTP/HTTPS access is already covered by this required permission, so changing the API address does not request additional permissions. The extension sends only Discord messages, email selections and editor selections you explicitly request, using the configured server. There is no analytics or telemetry. Set **History limit** beside the API address in the popup to keep 1–1,000 history entries (default: 50; each original/translation pair counts as one entry). Choose **Target language** in the same settings block. Czech is the default; source language detection is always automatic. The selected target applies to Discord, drafts and Thunderbird. The shared **Save** button saves the API address, history limit and target language together. Saving a lower limit immediately removes the oldest excess entries. The same limit applies to subsequent saves. Draft backups stay in local extension storage, are not synced or encrypted, and disappear when the extension is uninstalled. Each backup records the original text, target language, timestamp and site hostname, and adds the translated text and completion time when translation succeeds. Results arriving after an entry is deleted or removed by the history limit do not recreate it. Browser-granted site restrictions still apply.
 
 A compatible server must provide:
 
 | Request | Response |
 | --- | --- |
 | `GET /health` | JSON including `status: "ready"` for diagnostics. |
-| `POST /translate` with `{ "q": "Hello", "source": "auto", "target": "cs" }` for Discord, or `{ "q": "Ahoj", "source": "cs", "target": "en" }` for drafts | HTTP 202, `{ "jobId": "<32 lowercase hex characters>", "status": "pending" }`. |
+| `POST /translate` with `{ "q": "Hello", "source": "auto", "target": "cs" }` (replace `cs` with the selected target code) | HTTP 202, `{ "jobId": "<32 lowercase hex characters>", "status": "pending" }`. |
 | `GET /translations/<jobId>` | `{ "status": "pending", "partialText": "..." }`, `{ "status": "done", "translatedText": "..." }`, or `{ "status": "failed", "error": "..." }`. |
 
 Polling runs every 500 ms for up to 180 seconds. Partial text is optional and displayed only for Discord messages. The server must accept extension-origin requests; startup, model installation and GPU configuration depend on your backend. Keep a local API on loopback unless you have secured another deployment.
@@ -75,7 +75,7 @@ Polling runs every 500 ms for up to 180 seconds. Partial text is optional and di
 ```bash
 curl http://127.0.0.1:5001/health
 curl -H 'Content-Type: application/json' \
-  -d '{"q":"Ahoj","source":"cs","target":"en"}' \
+  -d '{"q":"Ahoj","source":"auto","target":"en"}' \
   http://127.0.0.1:5001/translate
 ```
 
@@ -89,7 +89,7 @@ Discord updates are driven by relevant DOM changes, scrolling, resizing and retu
 
 `src/content.js` contains Discord rendering and progressive translation; `src/selection.js` contains editor selection and safe replacement. `src/background.js` handles both message protocols, keyboard commands, API requests and serialized draft backups and history limits. The popup contains shared API settings and backup recovery.
 
-Discord defaults to manual translation. To enable automatic translation of visible messages, change `MANUAL_TRANSLATION` in `src/content.js` and rebuild. Its source/target language constants apply to messages only; selected drafts use Czech → English.
+Discord defaults to manual translation. To enable automatic translation of visible messages, change `MANUAL_TRANSLATION` in `src/content.js` and rebuild. The selected target language applies to Discord messages, editable selections and Thunderbird. Source language detection is always automatic. Saving a different target restores original Discord messages, clears the old translation cache and discards late progress from jobs using the previous target.
 
 ```bash
 node --test tests/*.test.cjs

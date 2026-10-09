@@ -41,7 +41,7 @@ vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../src/con
   + '\nglobalThis.translate = text => TranslationService.translate(text);', content);
 const selection = vm.createContext({
   console: quiet, setTimeout, document: {}, window: {},
-  [apiNamespace]: content[apiNamespace]
+  [apiNamespace]: { ...content[apiNamespace], storage: { local: { get: async () => ({ translationApiUrl: apiUrl, translationTarget: 'en' }) } } }
 });
 vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../src/selection.js'), 'utf8')
   + '\nglobalThis.translateDraft = translate;', selection);

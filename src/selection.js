@@ -104,11 +104,12 @@ async function request(path, body, apiUrl) {
   return response.body;
 }
 
-async function translate(text, source = 'cs', target = 'en') {
-  const stored = await selectionApi.storage.local.get('translationApiUrl');
+async function translate(text, target) {
+  const stored = await selectionApi.storage.local.get(['translationApiUrl', 'translationTarget']);
   const apiUrl = stored.translationApiUrl || 'http://127.0.0.1:5001';
+  target ??= stored.translationTarget || 'cs';
   const deadline = Date.now() + TRANSLATION_TIMEOUT_MS;
-  let result = await request('/translate', { q: text, source, target }, apiUrl);
+  let result = await request('/translate', { q: text, source: 'auto', target }, apiUrl);
   if (!/^[a-f0-9]{32}$/.test(result.jobId || '')) {
     throw new Error('The server did not return a valid translation ID.');
   }
@@ -143,11 +144,13 @@ async function translateSelection() {
   translating = true;
   try {
     // Save the original selection successfully before starting translation.
-    const backup = await selectionApi.runtime.sendMessage({ type: 'backup-save', text: snapshot.text });
+    const stored = await selectionApi.storage.local.get('translationTarget');
+    const target = stored.translationTarget || 'cs';
+    const backup = await selectionApi.runtime.sendMessage({ type: 'backup-save', text: snapshot.text, target });
     if (!backup?.ok) {
       throw new Error(backup?.body?.error || 'Could not save the original text. Translation was not started.');
     }
-    const translated = await translate(snapshot.text);
+    const translated = await translate(snapshot.text, target);
     const saved = await selectionApi.runtime.sendMessage({
       type: 'backup-complete', id: backup.id, translatedText: translated
     });

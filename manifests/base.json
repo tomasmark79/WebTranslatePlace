@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "WebTranslatePlace",
   "version": "0.1.0",
-  "description": "Translate Discord messages into Czech and selected Czech drafts into English",
+  "description": "Translate Discord messages and selected drafts into your chosen language",
   "author": "Tomáš Mark",
   "permissions": [
     "storage"
@@ -60,7 +60,7 @@
         "default": "Alt+Shift+S",
         "mac": "Alt+Shift+S"
       },
-      "description": "Translate selected Czech text into English"
+      "description": "Translate selected text into your chosen language"
     }
   }
 }

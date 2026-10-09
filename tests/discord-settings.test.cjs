@@ -74,11 +74,12 @@ function discord(initialState) {
   const translator = Object.create(context.Translator.prototype);
   let starts = 0, stops = 0, cleanups = 0;
   Object.assign(translator, { isActive: true, stateRevision: 0,
-    context: { isInvalid: false }, processedMessages: new Set(['message']),
+    context: { isInvalid: false }, translationCache: new Map(), processedMessages: new Set(['message']),
     startProcessing() { if (this.isActive) starts++; },
     stopProcessing() { stops++; }, cleanupTranslations() { cleanups++; } });
   return { translator, context, markers,
     change(value, area = 'local') { settingsListener({ translatorActive: { newValue: value } }, area); },
+    target(value) { settingsListener({ translationTarget: { oldValue: 'cs', newValue: value } }, 'local'); },
     get starts() { return starts; }, get stops() { return stops; }, get cleanups() { return cleanups; } };
 }
 
@@ -123,6 +124,38 @@ test('disabling Discord while a manual request runs discards progress and comple
   const request = h.translator.translateSingleMessage({ isConnected: true }, 'message', flag);
   h.change(false);
   h.change(true);
+  progress('Aho');
+  finish('Ahoj');
+  await request;
+  assert.equal(h.translator.translationCache.size, 0);
+});
+
+
+test('Changing the target restores messages, clears the old cache and invalidates running jobs', async () => {
+  const h = discord(true);
+  await h.translator.start();
+  h.translator.translationCache.set('Hello', 'Ahoj');
+  const revision = h.translator.stateRevision;
+  h.target('de');
+  assert.equal(h.translator.translationCache.size, 0);
+  assert.equal(h.translator.processedMessages.size, 0);
+  assert.equal(h.cleanups, 1);
+  assert.equal(h.translator.isActive, true);
+  assert.ok(h.translator.stateRevision > revision);
+});
+
+
+test('An old target job cannot render progress or cache its result after the target changes', async () => {
+  const h = discord(true);
+  let finish, progress;
+  Object.assign(h.translator, { messageTranslations: new Map(), translationCache: new Map(),
+    extractCleanText: () => 'Hello', setFlagStatus() {},
+    displaySingleTranslation() { assert.fail('Old target translation rendered'); },
+    translateText: (_, callback) => { progress = callback; return new Promise(resolve => { finish = resolve; }); } });
+  const flag = { classList: { contains: () => false }, setAttribute() {} };
+  await h.translator.start();
+  const request = h.translator.translateSingleMessage({ isConnected: true }, 'message', flag);
+  h.target('de');
   progress('Aho');
   finish('Ahoj');
   await request;
