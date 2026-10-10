@@ -67,16 +67,16 @@ Source language is detected automatically. **TranslatePlace language 1** default
 to English, **language 2** to Czech, and **Discord target language** to Czech.
 Select text, then invoke the desired TranslatePlace command:
 
-| Application | Language 1 shortcut | macOS |
-| --- | --- | --- |
-| Firefox | **Ctrl+Alt+S** | **Command+Option+S** |
-| Other browsers | **Shift+Alt+S** | **Shift+Option+S** |
-| Thunderbird | **Ctrl+Alt+E** | **Command+Option+E** |
+| Application | Language 1 | Language 2 | macOS language 1 | macOS language 2 |
+| --- | --- | --- | --- | --- |
+| Firefox | **Ctrl+Alt+E** | **Ctrl+Alt+W** | **Command+Option+E** | **Command+Option+W** |
+| Other browsers | **Shift+Alt+E** | **Shift+Alt+W** | **Shift+Option+E** | **Shift+Option+W** |
+| Thunderbird | **Ctrl+Alt+E** | **Ctrl+Alt+W** | **Command+Option+E** | **Command+Option+W** |
 
-Language 2 has no default shortcut. Assign it through `chrome://extensions/shortcuts`
-or **Manage Extension Shortcuts** in Firefox/Thunderbird. The popup displays the
-assigned bindings when supported. In Thunderbird, select text in the message body;
-subject and recipient fields are outside this integration.
+Change bindings through `chrome://extensions/shortcuts` or **Manage Extension
+Shortcuts** in Firefox/Thunderbird. The popup displays the assigned bindings when
+supported. In Thunderbird, select text in the message body; subject and recipient
+fields are outside this integration.
 
 Selected drafts and email selections are limited to 10,000 characters. Keep the
 editor focused and the draft and selection unchanged until replacement completes.

@@ -33,7 +33,11 @@
       "description": "TranslatePlace: translate into language 1"
     },
     "translate-selection-secondary": {
-      "description": "TranslatePlace: translate into language 2"
+      "description": "TranslatePlace: translate into language 2",
+      "suggested_key": {
+        "default": "Ctrl+Alt+W",
+        "mac": "Command+Alt+W"
+      }
     }
   }
 }

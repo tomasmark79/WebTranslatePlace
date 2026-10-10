@@ -62,10 +62,13 @@ class BuildTests(unittest.TestCase):
                 if target == "firefox":
                     self.assertEqual(manifest["browser_specific_settings"]["gecko"]["id"],
                                      "webtranslateplace@digitalspace.name")
-                self.assertIn("translate-selection-secondary", manifest["commands"])
-                shortcut = manifest["commands"]["translate-selection"]["suggested_key"]
-                self.assertEqual(shortcut["default"], "Ctrl+Alt+S" if target == "firefox" else "Alt+Shift+S")
-                self.assertEqual(shortcut["mac"], "Command+Alt+S" if target == "firefox" else "Alt+Shift+S")
+                for command, letter in (("translate-selection", "E"),
+                                        ("translate-selection-secondary", "W")):
+                    shortcut = manifest["commands"][command]["suggested_key"]
+                    self.assertEqual(shortcut["default"],
+                                     f"Ctrl+Alt+{letter}" if target == "firefox" else f"Alt+Shift+{letter}")
+                    self.assertEqual(shortcut["mac"],
+                                     f"Command+Alt+{letter}" if target == "firefox" else f"Alt+Shift+{letter}")
                 if target == "epiphany":
                     self.assertEqual(manifest["manifest_version"], 2)
                     self.assertNotIn("action", manifest)
@@ -82,6 +85,11 @@ class BuildTests(unittest.TestCase):
         directory = self.output / "thunderbird"
         manifest = json.loads((directory / "manifest.json").read_text())
         self.assertEqual(manifest["manifest_version"], 2)
+        for command, letter in (("translate-selection", "E"),
+                                ("translate-selection-secondary", "W")):
+            self.assertEqual(manifest["commands"][command]["suggested_key"], {
+                "default": f"Ctrl+Alt+{letter}", "mac": f"Command+Alt+{letter}"
+            })
         self.assertNotIn("content_scripts", manifest)
         self.assertNotIn("host_permissions", manifest)
         self.assertNotIn("action", manifest)

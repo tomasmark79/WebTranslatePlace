@@ -57,13 +57,17 @@
   "commands": {
     "translate-selection": {
       "suggested_key": {
-        "default": "Alt+Shift+S",
-        "mac": "Alt+Shift+S"
+        "default": "Alt+Shift+E",
+        "mac": "Alt+Shift+E"
       },
       "description": "TranslatePlace: translate into language 1"
     },
     "translate-selection-secondary": {
-      "description": "TranslatePlace: translate into language 2"
+      "description": "TranslatePlace: translate into language 2",
+      "suggested_key": {
+        "default": "Alt+Shift+W",
+        "mac": "Alt+Shift+W"
+      }
     }
   }
 }
