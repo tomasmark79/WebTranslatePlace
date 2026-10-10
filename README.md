@@ -5,6 +5,10 @@ Translate selected drafts and email text, with additional Discord message transl
 WebTranslatePlace is the browser and Thunderbird client for that server; the
 server and language model are installed separately.
 
+![Selected-text translation with two target languages](TranslatePlace.png)
+
+The shortcuts shown are examples; see [Usage](#usage) for browser-specific defaults.
+
 ## Features
 
 - **Selected drafts:** translate selected text in text/search inputs, textareas
@@ -15,9 +19,9 @@ server and language model are installed separately.
 - **Settings and history:** configure the server, two TranslatePlace target
   languages and a separate Discord target. Recover, copy or delete original
   selections and completed translations from local history.
-- **Additional Discord translation:** translate a consecutive message block with
-  one icon, toggle its originals and retry failed messages. Each message gets
-  its own translation.
+- **Additional Discord translation:** click the translation icon next to a
+  message block to translate its messages. Toggle originals and retry failed
+  messages as needed; each message gets its own translation.
   Discord translation can be enabled or disabled in the popup.
 
 ## Requirements
