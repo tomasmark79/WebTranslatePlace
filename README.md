@@ -5,7 +5,7 @@ Translate selected drafts and email text, with additional Discord message transl
 WebTranslatePlace is the browser and Thunderbird client for that server; the
 server and language model are installed separately.
 
-![Selected-text translation with two target languages](TranslatePlace.png)
+![Selected-text translation with two target languages](translate-exam.gif)
 
 The shortcuts shown are examples; see [Usage](#usage) for browser-specific defaults.
 
