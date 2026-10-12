@@ -7,8 +7,6 @@ server and language model are installed separately.
 
 ![Selected-text translation with two target languages](translate-exam.gif)
 
-The shortcuts shown are examples; see [Usage](#usage) for browser-specific defaults.
-
 ## Features
 
 - **Selected drafts:** translate selected text in text/search inputs, textareas
