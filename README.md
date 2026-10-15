@@ -52,8 +52,7 @@ python3 scripts/build.py chrome firefox  # selected targets
 | GNOME Web (experimental) | Enable experimental WebExtensions support and import `dist/webtranslateplace-epiphany-0.1.0.xpi` through the extension manager. |
 
 Reload pages or reopen Thunderbird message/compose windows after installing or
-updating. Disable DiMeTrans/CzEn Composer on the same pages to avoid duplicate
-icons and shortcut conflicts; their settings and history are not imported.
+updating.
 
 Firefox now uses `webtranslateplace@digitalspace.name`. Installations using the
 previous `webtranslateplace@tomasmark79` ID are separate add-ons; their settings
@@ -99,6 +98,9 @@ For the additional Discord feature, click a translation icon to translate its
 message block; click again to toggle originals. Each message keeps its original
 text while translating and displays the completed translation in one step, avoiding
 layout shifts as words arrive. Selection translation also works in Discord's composer.
+You can also click the message author's avatar to start translating the block.
+Subsequent avatar clicks use Discord's normal profile action; the translation icon
+remains available for toggling originals and retrying failed translations.
 
 ## Development
 

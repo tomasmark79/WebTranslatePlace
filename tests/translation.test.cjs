@@ -530,6 +530,87 @@ function groupedDiscord(specs) {
   return { translator, rows, messages, calls, add };
 }
 
+function avatarClick(h, row = h.rows[0], options = {}) {
+  const avatar = { closest: selector => selector === '[id^="chat-messages-"]' ? row : null };
+  return { target: { closest: () => avatar }, button: 0,
+    prevented: false, stopped: false,
+    preventDefault() { this.prevented = true; },
+    stopImmediatePropagation() { this.stopped = true; }, ...options };
+}
+
+test('first avatar click translates its block; subsequent clicks reach Discord during and after translation', async () => {
+  const h = groupedDiscord([['One', true], ['Two', false], ['Other author', true]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  const icon = group.icon;
+  let finish;
+  const completed = new Promise(resolve => { finish = resolve; });
+  h.translator.translateText = async text => {
+    h.calls.push(text);
+    return text === 'One' ? completed : 'Dva';
+  };
+  const translate = h.translator.translateMessageGroup.bind(h.translator);
+  let pending;
+  h.translator.translateMessageGroup = current => { pending = translate(current); return pending; };
+  const first = avatarClick(h);
+  h.translator.handleAvatarClick(first);
+  assert.equal(first.prevented, true);
+  assert.equal(first.stopped, true);
+  assert.deepEqual(h.calls, ['One']);
+  const second = avatarClick(h);
+  h.translator.handleAvatarClick(second);
+  assert.equal(second.prevented, false);
+  assert.equal(second.stopped, false);
+  assert.equal(group.showingTranslation, true);
+  finish('Jedna');
+  await pending;
+  assert.deepEqual(h.calls, ['One', 'Two']);
+  assert.equal(h.translator.messageTranslations.size, 2);
+  const third = avatarClick(h);
+  h.translator.handleAvatarClick(third);
+  assert.equal(third.stopped, false);
+  assert.equal(group.icon, icon);
+  assert.equal(group.icon.getAttribute('data-translation-state'), 'done');
+  await h.translator.translateMessageGroup(group);
+  assert.equal(group.showingTranslation, false);
+  assert.deepEqual(h.calls, ['One', 'Two']);
+});
+
+test('avatar handling leaves modified clicks, reply avatars, unrelated rows and disabled translation alone', async () => {
+  const h = groupedDiscord([['One', true]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  for (const options of [{ button: 2 }, { ctrlKey: true }, { metaKey: true },
+    { shiftKey: true }, { altKey: true }, { defaultPrevented: true },
+    { target: { closest: () => null } },
+    { target: { closest: () => ({ closest: () => ({}) }) } }]) {
+    const event = avatarClick(h, h.rows[0], options);
+    h.translator.handleAvatarClick(event);
+    assert.equal(event.stopped, false);
+    assert.equal(group.avatarClicked, undefined);
+  }
+  h.translator.handleAvatarClick(avatarClick(h, fakeElement()));
+  h.translator.isActive = false;
+  h.translator.handleAvatarClick(avatarClick(h));
+  h.translator.isActive = true;
+  h.translator.context.isInvalid = true;
+  h.translator.handleAvatarClick(avatarClick(h));
+  assert.deepEqual(h.calls, []);
+  assert.equal(group.avatarClicked, undefined);
+});
+
+test('avatar keeps the default action when the icon has already translated the block', async () => {
+  const h = groupedDiscord([['One', true]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  await h.translator.translateMessageGroup(group);
+  const event = avatarClick(h);
+  h.translator.handleAvatarClick(event);
+  assert.equal(event.stopped, false);
+  assert.equal(group.showingTranslation, true);
+  assert.deepEqual(h.calls, ['One']);
+});
+
 test('one Discord icon covers thirty messages; author headers and attachment-only rows split blocks', async () => {
   const h = groupedDiscord([
     ...Array.from({ length: 30 }, (_, i) => [`Message ${i}`, i === 0]),

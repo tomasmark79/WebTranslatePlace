@@ -512,6 +512,8 @@ class DiscordTranslator {
     });
     document.addEventListener('scroll', this.onPageChange, { capture: true, passive: true });
     document.addEventListener('visibilitychange', this.onVisibilityChange);
+    this.onAvatarClick ??= event => this.handleAvatarClick(event);
+    document.addEventListener('click', this.onAvatarClick, true);
     window.addEventListener('resize', this.onPageChange, { passive: true });
     this.updateVisibility();
   }
@@ -574,6 +576,7 @@ class DiscordTranslator {
     this.messageObserver = null;
     document.removeEventListener('scroll', this.onPageChange, true);
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    document.removeEventListener('click', this.onAvatarClick, true);
     window.removeEventListener('resize', this.onPageChange);
   }
 
@@ -786,6 +789,24 @@ class DiscordTranslator {
       }
       this.refreshGroupIcon(group);
     }
+  }
+
+  handleAvatarClick(event) {
+    if (!this.isActive || this.context.isInvalid || event.defaultPrevented ||
+        event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const avatar = event.target?.closest?.('img[class^="avatar_"], img[class*=" avatar_"]');
+    if (!avatar || avatar.closest('[class*="repliedMessage"], [class*="embed"]')) return;
+    const row = avatar.closest('[id^="chat-messages-"]');
+    const group = this.messageGroups.get(row);
+    if (!group || group.avatarClicked || !group.container.isConnected) return;
+    group.avatarClicked = true;
+    // Once translation has started, further avatar clicks belong to Discord.
+    if (group.running || group.messages.every(element =>
+      this.messageTranslations.get(this.getMessageId(element))?.complete ||
+      !group.translatable.has(element))) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void this.translateMessageGroup(group).catch(error => logger.error('Avatar translation failed:', error));
   }
 
   refreshGroupIcon(group) {

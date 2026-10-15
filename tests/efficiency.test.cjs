@@ -81,6 +81,7 @@ test('idle Discord has no polling, ignores unrelated and own DOM changes, batche
   await h.translator.startProcessing();
   await h.flush();
   assert.equal(h.scans, 1);
+  assert.equal(typeof h.document.listeners.get('click'), 'function');
   assert.equal(h.timers.size, 0);
   h.observer.callback([{ type: 'characterData', target: node() }]);
   h.observer.callback([{ type: 'childList', target: node(true),
