@@ -1226,14 +1226,8 @@ class DiscordTranslator {
       }
 
       // Translate using API
-      const translation = await this.translateText(textContent, partial => {
-        if (!isCurrent() || !partial?.trim() || !messageElement.isConnected) return;
-        if (this.messageTranslations.has(messageId)) {
-          this.updateTranslation(messageId, partial);
-        } else {
-          this.displaySingleTranslation(messageElement, partial, messageId, flagIcon, false);
-        }
-      });
+      // Keep the original layout until the full translation is ready.
+      const translation = await this.translateText(textContent);
       if (!isCurrent()) return;
       if (translation && translation.trim().length > 0) {
         // Cache translation
@@ -1709,14 +1703,7 @@ class DiscordTranslator {
           !this.context.isInvalid;
         try {
           if (!element?.isConnected) continue;
-          const translatedText = await this.translateText(text, partial => {
-            if (!isCurrent() || !partial?.trim() || !element.isConnected) return;
-            if (this.messageTranslations.has(messageId)) {
-              this.updateTranslation(messageId, partial);
-            } else {
-              this.displayTranslation(element, partial, index, messageId, false);
-            }
-          });
+          const translatedText = await this.translateText(text);
           if (!isCurrent()) break;
           this.cacheTranslation(text, translatedText);
           if (this.messageTranslations.has(messageId)) {

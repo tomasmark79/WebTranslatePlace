@@ -324,7 +324,7 @@ test('automatický režim vytvoří přepínač a nahradí originál', () => {
   assert.equal(translator.messageTranslations.get('2').translatedElement.hidden, true);
 });
 
-test('průběžný překlad mění stejný uzel a během generování lze přepnout na originál', async () => {
+test('Discord keeps the original unchanged through partial API results and displays only the completed text', async () => {
   const { context } = load([]);
   context.document = { createElement: tag => fakeElement(tag.toUpperCase()) };
   const translator = Object.create(context.Translator.prototype);
@@ -333,38 +333,32 @@ test('průběžný překlad mění stejný uzel a během generování lze přepn
   original.textContent = 'Hello';
   parent.insertBefore(original);
   const icon = fakeElement('BUTTON');
-  let report;
-  let finish;
   Object.assign(translator, {
     messageTranslations: new Map(), translationCache: new Map(),
     TRANSLATION_CLASS: 'discord-translator-translation',
     FLAG_CONTAINER_CLASS: 'discord-translator-flag-container',
-    extractCleanText: () => 'Hello', isMessageBeingEdited: () => false,
-    translateText: (_text, onProgress) => new Promise(resolve => {
-      report = onProgress; finish = resolve;
-    })
+    extractCleanText: () => 'Hello', isMessageBeingEdited: () => false
   });
-  const pending = translator.translateSingleMessage(original, '1', icon);
-  assert.equal(translator.messageTranslations.has('1'), false);
-  assert.equal(icon.classList.contains('translating'), true);
-  assert.equal(icon.classList.contains('translation-complete'), false);
-  assert.equal(icon.getAttribute('aria-busy'), 'true');
-  assert.equal(original.style.getPropertyValue('display'), '');
-  assert.equal(parent.children.length, 1);
-  report('Ah');
+  const responses = [job, { status: 'pending', partialText: 'Ah' },
+    { status: 'pending', partialText: 'Aho' }, { status: 'done', translatedText: 'Ahoj' }];
+  let requests = 0;
+  context[apiNamespace].runtime.sendMessage = async () => {
+    requests++;
+    assert.equal(translator.messageTranslations.has('1'), false);
+    assert.equal(icon.classList.contains('translating'), true);
+    assert.equal(icon.classList.contains('translation-complete'), false);
+    assert.equal(icon.getAttribute('aria-busy'), 'true');
+    assert.equal(original.style.getPropertyValue('display'), '');
+    assert.equal(original.textContent, 'Hello');
+    assert.equal(parent.children.length, 1);
+    // Clicking again while waiting must not duplicate the request.
+    await translator.translateSingleMessage(original, '1', icon);
+    return JSON.stringify(envelope(responses.shift()));
+  };
+  await translator.translateSingleMessage(original, '1', icon);
+  assert.equal(requests, 4);
   const state = translator.messageTranslations.get('1');
   const translatedElement = state.translatedElement;
-  assert.equal(translatedElement.textContent, 'Ah');
-  assert.equal(original.style.getPropertyValue('display'), 'none');
-  await translator.translateSingleMessage(original, '1', icon);
-  assert.equal(original.style.getPropertyValue('display'), '');
-  report('Aho');
-  assert.equal(icon.classList.contains('translating'), true);
-  assert.equal(translatedElement.textContent, 'Aho');
-  assert.equal(translatedElement.hidden, true);
-  finish('Ahoj');
-  await pending;
-  assert.equal(state.translatedElement, translatedElement);
   assert.equal(state.complete, true);
   assert.equal(icon.classList.contains('translating'), false);
   assert.equal(icon.classList.contains('translation-complete'), true);
@@ -372,7 +366,11 @@ test('průběžný překlad mění stejný uzel a během generování lze přepn
   assert.doesNotMatch(icon.innerHTML, /<animate/);
   assert.equal(translatedElement.textContent, 'Ahoj');
   assert.equal(translator.translationCache.get('Hello'), 'Ahoj');
+  assert.equal(original.style.getPropertyValue('display'), 'none');
+  assert.equal(parent.children.length, 2);
+  await translator.translateSingleMessage(original, '1', icon);
   assert.equal(original.style.getPropertyValue('display'), '');
+  assert.equal(translatedElement.hidden, true);
   await translator.translateSingleMessage(original, '1', icon);
   assert.equal(translatedElement.hidden, false);
   assert.equal(icon.title, 'Show original');
@@ -587,15 +585,17 @@ test('group progress stays loading and toggling during translation applies to su
   const h = groupedDiscord([['One', true], ['Two', false]]);
   await h.translator.addGroupedFlagIcons(h.messages);
   const group = h.translator.messageGroups.get(h.rows[0]);
-  let finish, progress;
+  let finish;
   h.translator.translateText = (text, callback) => {
     h.calls.push(text);
     if (text === 'Two') return Promise.resolve('Dva');
-    progress = callback;
+    assert.equal(callback, undefined);
     return new Promise(resolve => { finish = resolve; });
   };
   const pending = h.translator.translateMessageGroup(group);
-  progress('Je');
+  assert.equal(h.translator.messageTranslations.size, 0);
+  assert.equal(h.messages[0].style.getPropertyValue('display'), '');
+  assert.equal(group.icon.getAttribute('data-translation-state'), 'loading');
   await h.translator.translateMessageGroup(group);
   assert.deepEqual(h.calls, ['One']);
   finish('Jedna');
@@ -615,7 +615,7 @@ test('a failed group message can be retried without removing the icon or retrans
   let fail = true;
   h.translator.translateText = async (text, progress) => {
     h.calls.push(text);
-    if (text === 'Two' && fail) { progress('Partial'); throw new Error('Offline'); }
+    if (text === 'Two' && fail) throw new Error('Offline');
     return `Translated: ${text}`;
   };
   await h.translator.translateMessageGroup(group);

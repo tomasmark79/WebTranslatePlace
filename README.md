@@ -96,8 +96,9 @@ access permissions allow selection translation and connections to the configured
 API; browser-granted site restrictions still apply.
 
 For the additional Discord feature, click a translation icon to translate its
-message block; click again to toggle originals. Selection translation also works
-in Discord's composer.
+message block; click again to toggle originals. Each message keeps its original
+text while translating and displays the completed translation in one step, avoiding
+layout shifts as words arrive. Selection translation also works in Discord's composer.
 
 ## Development
 

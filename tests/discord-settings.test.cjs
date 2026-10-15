@@ -113,19 +113,18 @@ test('an old state response cannot undo a preference change during startup', asy
   assert.equal(h.starts, 0);
 });
 
-test('disabling Discord while a manual request runs discards progress and completion', async () => {
+test('disabling Discord while a manual request runs discards completion', async () => {
   const h = discord(true);
-  let finish, progress;
+  let finish;
   Object.assign(h.translator, { messageTranslations: new Map(), translationCache: new Map(),
     extractCleanText: () => 'Hello', setFlagStatus() {},
     displaySingleTranslation() { assert.fail('Disabled translation rendered'); },
-    translateText: (_, callback) => { progress = callback; return new Promise(resolve => { finish = resolve; }); } });
+    translateText: () => new Promise(resolve => { finish = resolve; }) });
   const flag = { classList: { contains: () => false }, setAttribute() {} };
   await h.translator.start();
   const request = h.translator.translateSingleMessage({ isConnected: true }, 'message', flag);
   h.change(false);
   h.change(true);
-  progress('Aho');
   finish('Ahoj');
   await request;
   assert.equal(h.translator.translationCache.size, 0);
@@ -146,18 +145,17 @@ test('Changing the target restores messages, clears the old cache and invalidate
 });
 
 
-test('An old target job cannot render progress or cache its result after the target changes', async () => {
+test('An old target job cannot render or cache its result after the target changes', async () => {
   const h = discord(true);
-  let finish, progress;
+  let finish;
   Object.assign(h.translator, { messageTranslations: new Map(), translationCache: new Map(),
     extractCleanText: () => 'Hello', setFlagStatus() {},
     displaySingleTranslation() { assert.fail('Old target translation rendered'); },
-    translateText: (_, callback) => { progress = callback; return new Promise(resolve => { finish = resolve; }); } });
+    translateText: () => new Promise(resolve => { finish = resolve; }) });
   const flag = { classList: { contains: () => false }, setAttribute() {} };
   await h.translator.start();
   const request = h.translator.translateSingleMessage({ isConnected: true }, 'message', flag);
   h.target('de');
-  progress('Aho');
   finish('Ahoj');
   await request;
   assert.equal(h.translator.translationCache.size, 0);
