@@ -102,6 +102,8 @@ You can also click the message author's avatar to start translating the block.
 Subsequent avatar clicks use Discord's normal profile action; the translation icon
 remains available for toggling originals and retrying failed translations.
 
+![Translating Discord messages](translate-discord-msg.gif)
+
 ## Development
 
 Edit `src/` and `manifests/`, then rebuild; `dist/` is generated and ignored by Git.
