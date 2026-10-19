@@ -46,8 +46,7 @@ class BuildTests(unittest.TestCase):
                 self.assertTrue((directory / action["default_popup"]).is_file())
                 self.assertTrue((directory / manifest["options_ui"]["page"]).is_file())
                 discord_script, selection_script = manifest["content_scripts"]
-                self.assertEqual(discord_script["matches"], [
-                    "*://discord.com/*", "*://canary.discord.com/*", "*://ptb.discord.com/*"])
+                self.assertEqual(discord_script["matches"], ["http://*/*", "https://*/*"])
                 self.assertEqual(discord_script["js"], ["content.js"])
                 self.assertFalse(discord_script.get("all_frames", False))
                 self.assertEqual(selection_script["js"], ["selection.js"])

@@ -1,6 +1,6 @@
 # WebTranslatePlace
 
-Translate selected drafts and email text, with additional Discord message translation, using
+Translate selected drafts and email text, with Discord and Element chat translation, using
 [Tomáš Mark's translation-api](https://github.com/tomasmark79/translation-api).
 WebTranslatePlace is the browser and Thunderbird client for that server; the
 server and language model are installed separately.
@@ -15,12 +15,15 @@ server and language model are installed separately.
 - **Thunderbird:** replace selected text while composing, or display a translation
   in a separate panel while reading. Stored messages remain unchanged.
 - **Settings and history:** configure the server, two TranslatePlace target
-  languages and a separate Discord target. Recover, copy or delete original
+  languages and a separate shared Discord/Element target. Recover, copy or delete original
   selections and completed translations from local history.
 - **Additional Discord translation:** click the translation icon next to a
   message block to translate its messages. Toggle originals and retry failed
   messages as needed; each message gets its own translation.
-  Discord translation can be enabled or disabled in the popup.
+  Discord and Element translation share an enable switch and target language in the popup.
+- **Element chat translation:** the same icon appears immediately after the author's
+  nickname and translates that author's consecutive messages. Works on app.element.io
+  and self-hosted Element Web domains; avatars keep their normal profile action.
 
 ## Requirements
 
@@ -62,10 +65,10 @@ and history are not migrated automatically.
 
 Start translation-api, then open the extension popup. **Translation API URL**
 defaults to `http://127.0.0.1:5001`. Enter the server's base URL without `/translate`
-and press **Save**. Selection and Discord translation use this address.
+and press **Save**. Selection, Discord and Element translation use this address.
 
 Source language is detected automatically. **TranslatePlace language 1** defaults
-to English, **language 2** to Czech, and **Discord target language** to Czech.
+to English, **language 2** to Czech, and **Discord & Element target language** to Czech.
 Select text, then invoke the desired TranslatePlace command:
 
 | Application | Language 1 | Language 2 | macOS language 1 | macOS language 2 |
@@ -104,6 +107,19 @@ remains available for toggling originals and retrying failed translations.
 
 ![Translating Discord messages](translate-discord-msg.gif)
 
+In Element Web, use the icon immediately after the author's nickname to translate
+the message block or toggle originals. The original stays visible until each full
+translation is ready. Room changes, message edits and disabling translation restore
+originals and discard stale results. Quoted messages, preview cards, attachments and
+edit fields are excluded from translation requests.
+
+![Element message translation controls after author nicknames](translate-element-msg.png)
+
+Element is detected by its `matrixchat` application root on HTTP/HTTPS pages,
+so custom domains work without a domain list. Other sites do not start message
+observers or inject chat controls. Detection runs in the top-level page; Element
+embedded in an iframe and the standalone desktop app are not covered.
+
 ## Development
 
 Edit `src/` and `manifests/`, then rebuild; `dist/` is generated and ignored by Git.
@@ -119,6 +135,11 @@ python3 scripts/build.py
 npx --yes web-ext lint --source-dir dist/firefox --warnings-as-errors
 ```
 
+Open `tests/fixtures/element.html` in a browser for a DOM regression check with
+simulated translations. Its result must show `PASS`; it covers both Element tile
+layouts, inline placement, grouped translation, toggling and cleanup. It does not
+replace testing in a signed-in Element session.
+
 With translation-api running, `node tests/live-translation.cjs chrome` (or
 `firefox`) checks real HTTP translations with simulated extension origins.
 Set `WEBTRANSLATEPLACE_API_URL` to test another address. See the server's
@@ -128,11 +149,16 @@ for the job submission and polling protocol.
 Automated checks do not verify browser UI behavior. Before release, test shortcuts,
 selection replacement, changed-draft protection, history, permissions and clipboard
 in each supported application. Thunderbird's live mail, focus and undo behavior
-also require verification. Finally, check the additional Discord translation and
+also require verification. Finally, check Discord and Element translation and
 toggling of originals.
 
 ## Troubleshooting
 
+- **After rebuilding an unpacked extension:** reload WebTranslatePlace in the
+  browser's extension manager, then reload Discord/Element tabs. Reloading only
+  the chat can leave the old background worker running alongside new content
+  scripts. This can show icons but fail with “The translation server did not
+  respond” even though the API is available.
 - **Server unavailable:** check `http://127.0.0.1:5001/health` (or your configured
   server) for `"status": "ready"`, then verify Ollama and the model are running.
 - **Shortcut does nothing:** check its assigned binding and site access, reload

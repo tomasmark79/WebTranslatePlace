@@ -106,6 +106,7 @@ class TranslationService {
   static async request(path, body, apiUrl = CONFIG.TRANSLATION_API_URL) {
     const responseText = await extensionApi.runtime.sendMessage(JSON.stringify({
       type: 'fetch',
+      client: CONFIG.CHAT_CLIENT,
       args: [apiUrl + path, {
         method: body === undefined ? 'GET' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -286,7 +287,7 @@ class DiscordTranslator {
       }
       
       /* Make parent message have relative positioning for absolute child */
-      [class*="markup"] {
+      [id^="chat-messages-"] [class*="markup"] {
         position: relative;
       }
       
@@ -464,6 +465,7 @@ class DiscordTranslator {
     try {
       const response = await extensionApi.runtime.sendMessage(JSON.stringify({
         type: 'getState',
+        client: CONFIG.CHAT_CLIENT,
         args: []
       }));
       const state = JSON.parse(response);
@@ -532,7 +534,7 @@ class DiscordTranslator {
   }
 
   mutationTouchesMessages(record) {
-    const selector = '[class*="markup"], [id^="chat-messages-"], [id^="message-content-"]';
+    const selector = this.mutationSelector || '[class*="markup"], [id^="chat-messages-"], [id^="message-content-"]';
     const ownSelector = `.${this.FLAG_CONTAINER_CLASS}, .${this.TRANSLATION_CLASS}`;
     const element = record.target.nodeType === 1 ? record.target : record.target.parentElement;
     if (element?.closest(ownSelector)) return false;
@@ -601,6 +603,7 @@ class DiscordTranslator {
     try {
       await extensionApi.runtime.sendMessage(JSON.stringify({
         type: 'updateStats',
+        client: CONFIG.CHAT_CLIENT,
         args: [{
           translated: this.messageTranslations.size,
           cached: this.translationCache.size
@@ -1482,7 +1485,7 @@ class DiscordTranslator {
     this.reconcileTranslations();
 
     // Use the best selector that finds message content reliably
-    const allMessages = document.querySelectorAll(
+    const allMessages = document.querySelectorAll(this.messageSelector ||
       `[class*="markup"]:not(.${this.TRANSLATION_CLASS})`
     );
 
@@ -1790,14 +1793,159 @@ class DiscordTranslator {
 
 }
 
+/** Element uses the same translation lifecycle and controls as Discord. */
+class ElementTranslator extends DiscordTranslator {
+  constructor(context) {
+    super(context);
+    CONFIG.CHAT_CLIENT = 'element';
+    this.rowSelector = '.mx_EventTile, [data-testid="event-tile"]';
+    this.senderSelector = '.mx_EventTile_sender, [data-testid="event-tile-slot-sender"]';
+    this.messageSelector = `.mx_MTextBody:not(.${this.TRANSLATION_CLASS})`;
+    this.mutationSelector = `${this.rowSelector}, .mx_MTextBody`;
+    this.elementMessageIds = new WeakMap();
+    this.nextElementMessageId = 0;
+  }
+
+  injectFlagIconStyles() {
+    super.injectFlagIconStyles();
+    if (document.getElementById('wtp-element-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'wtp-element-styles';
+    style.textContent = `
+      .wtp-element-control.${this.FLAG_CONTAINER_CLASS} {
+        position: static; transform: none; margin-inline-start: 8px;
+        vertical-align: middle; flex: 0 0 auto;
+      }
+      .mx_EventTile_sender:has(+ .wtp-element-control),
+      [data-testid="event-tile-slot-sender"]:has(+ .wtp-element-control) .mx_DisambiguatedProfile {
+        vertical-align: middle;
+      }
+      .wtp-element-control .${this.FLAG_ICON_CLASS} {
+        color: var(--cpd-color-text-secondary, #747f8d);
+      }
+      .wtp-element-control .${this.FLAG_ICON_CLASS}.translation-complete {
+        color: #2397ff;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  getCurrentChannelId() {
+    // Element routes rooms in the hash; query/event changes are not room changes.
+    return window.location.hash.match(/^#\/room\/([^/?]+)/)?.[1] || window.location.hash;
+  }
+
+  getMessageId(element) {
+    const row = element.closest(this.rowSelector);
+    const identity = row?.closest('[data-event-id], [data-scroll-tokens]') || row;
+    const id = identity?.getAttribute('data-event-id') || identity?.getAttribute('data-scroll-tokens') || row?.id;
+    if (id) return id;
+    // Older layouts may omit event attributes. Equal messages still need distinct IDs.
+    const key = row || element;
+    if (!this.elementMessageIds.has(key)) this.elementMessageIds.set(key, `element-${++this.nextElementMessageId}`);
+    return this.elementMessageIds.get(key);
+  }
+
+  isMessageBeingEdited(element) {
+    return !!element.closest('textarea, input, [contenteditable], [role="textbox"]') ||
+      !!element.closest(this.rowSelector)?.querySelector('textarea, input, [contenteditable], [role="textbox"]');
+  }
+
+  shouldSkipMessage(element) {
+    return !element.closest(this.rowSelector) || this.isMessageBeingEdited(element) ||
+      !!element.closest('.mx_ReplyTile, .mx_ReplyChain, .mx_EventTile_caption, .mx_TextualBody_urlPreviews, .mx_LinkPreviewWidget, [data-testid="event-tile-slot-replyChain"]');
+  }
+
+  extractCleanText(element) {
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll('mx-reply, .mx_ReplyTile, .mx_ReplyChain, .mx_TextualBody_urlPreviews, .mx_LinkPreviewWidget, .mx_MTextBody_edited, [data-textual-body-annotation-wrapper] > button, pre, code, img, video, audio').forEach(node => node.remove());
+    return clone.textContent.replace(/https?:\/\/[^\s]+/g, '').trim();
+  }
+
+  collectMessageGroups(allMessages) {
+    const byRow = new Map();
+    for (const element of allMessages) {
+      if (this.shouldSkipMessage(element) || !element.textContent.trim()) continue;
+      const row = element.closest(this.rowSelector);
+      if (!byRow.has(row)) byRow.set(row, []);
+      byRow.get(row).push(element);
+    }
+    const groups = new Map();
+    let key = null;
+    let list = null;
+    for (const row of document.querySelectorAll(this.rowSelector)) {
+      const sender = row.querySelector(this.senderSelector);
+      // Keep each timeline separate (main room, thread and search results).
+      if (row.parentElement !== list || sender) {
+        key = sender ? row : null;
+        list = row.parentElement;
+      }
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(...(byRow.get(row) || []));
+    }
+    return groups;
+  }
+
+  async addGroupedFlagIcons(allMessages) {
+    const groups = this.collectMessageGroups(allMessages);
+    for (const [key, group] of this.messageGroups) {
+      if (!groups.get(key)?.length) {
+        group.container.remove();
+        this.messageGroups.delete(key);
+      }
+    }
+    for (const [key, messages] of groups) {
+      if (!messages.length) continue;
+      const sender = key.querySelector(this.senderSelector);
+      const translatable = new Set(messages.filter(element => this.extractCleanText(element)));
+      let group = this.messageGroups.get(key);
+      if (!translatable.size || !sender?.parentElement) {
+        group?.container.remove();
+        this.messageGroups.delete(key);
+        continue;
+      }
+      if (!group) {
+        if (!messages.some(element => this.isElementVisible(element))) continue;
+        const container = this.createFlagElement(messages[0], this.getMessageId(messages[0]));
+        container.classList.add('wtp-element-control');
+        group = { container, icon: container.firstElementChild, messages,
+          running: false, showingTranslation: true, error: false };
+        group.icon.translationGroup = group;
+        this.messageGroups.set(key, group);
+      }
+      group.messages = messages;
+      group.translatable = translatable;
+      // A sibling keeps the translation button out of the author's profile action.
+      if (sender.nextSibling !== group.container) {
+        sender.parentElement.insertBefore(group.container, sender.nextSibling);
+      }
+      for (const element of messages) {
+        const state = this.messageTranslations.get(this.getMessageId(element));
+        if (state) {
+          state.icon = group.icon;
+          this.setTranslationVisible(state, group.showingTranslation);
+        }
+      }
+      this.refreshGroupIcon(group);
+    }
+  }
+
+  handleAvatarClick() { /* Element avatars retain their native action. */ }
+}
+
 // ============================================================================
 // MAIN ENTRY POINT
 // ============================================================================
 
 (async function main() {
   const hosts = new Set(['discord.com', 'canary.discord.com', 'ptb.discord.com']);
-  if (!hosts.has(location.hostname) || !['http:', 'https:'].includes(location.protocol) ||
-      window.self !== window.top) return;
+  if (!['http:', 'https:'].includes(location.protocol) || window.self !== window.top) return;
+  const isDiscord = hosts.has(location.hostname);
+  // Element's app root is present before React loads, including self-hosted clients.
+  // Ordinary pages stay idle: no observers, timers, storage reads or injected styles.
+  const isElement = !isDiscord && !!globalThis.document?.getElementById('matrixchat');
+  if (!isDiscord && !isElement) return;
   try {
     logger.log('Initializing Discord Translator...');
 
@@ -1808,11 +1956,11 @@ class DiscordTranslator {
 
     logger.log('WebExtension runtime available, creating context...');
 
-    const context = new ContentScriptContext('discord-translator');
-    const translator = new DiscordTranslator(context);
+    const context = new ContentScriptContext(isElement ? 'element-translator' : 'discord-translator');
+    const translator = isElement ? new ElementTranslator(context) : new DiscordTranslator(context);
 
     // Make translator globally accessible for manual testing
-    window.discordTranslator = translator;
+    window[isElement ? 'elementTranslator' : 'discordTranslator'] = translator;
     logger.log('Translator assigned to window.discordTranslator');
 
     await translator.start();

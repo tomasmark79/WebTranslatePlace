@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "WebTranslatePlace",
-  "version": "0.1.0",
-  "description": "Translate selected drafts into your chosen language, with additional Discord message translation",
+  "version": "0.2.0",
+  "description": "Translate selected drafts into your chosen language, with Discord and Element chat translation",
   "author": "Tomáš Mark",
   "permissions": [
     "storage"
@@ -27,9 +27,8 @@
   "content_scripts": [
     {
       "matches": [
-        "*://discord.com/*",
-        "*://canary.discord.com/*",
-        "*://ptb.discord.com/*"
+        "http://*/*",
+        "https://*/*"
       ],
       "js": [
         "content.js"

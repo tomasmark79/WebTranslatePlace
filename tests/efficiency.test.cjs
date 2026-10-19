@@ -76,6 +76,25 @@ test('selection script is idle until invoked', () => {
   assert.equal(registrations, 1);
 });
 
+test('Element starts on public and custom domains, ordinary pages remain idle', () => {
+  for (const hostname of ['app.element.io', 'chat.example.org']) {
+    for (const elementRoot of [true, false]) {
+      const window = { addEventListener() {}, postMessage() {} };
+      window.self = window.top = window;
+      const context = vm.createContext({ console: quiet, window, AbortController,
+        location: { hostname, protocol: 'https:' },
+        document: { getElementById: id => id === 'matrixchat' ? (elementRoot ? {} : null) : {} },
+        [namespace]: { runtime: { id: 'test' } }
+      });
+      const script = source('content.js').replace('// MAIN ENTRY POINT',
+        'ElementTranslator.prototype.start = async function () { globalThis.started = true; };\n// MAIN ENTRY POINT');
+      vm.runInContext(script, context);
+      assert.equal(context.started === true, elementRoot);
+      assert.equal(!!window.elementTranslator, elementRoot);
+    }
+  }
+});
+
 test('idle Discord has no polling, ignores unrelated and own DOM changes, batches message changes', async () => {
   const h = scheduler();
   await h.translator.startProcessing();

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Element translation DOM regression fixture</title>
+<style>
+  body { font: 16px sans-serif; }
+  .mx_EventTile_sender { display: inline-block; font-weight: bold; }
+</style>
+<div id="matrixchat">
+  <div id="timeline">
+    <div class="mx_EventTile" data-event-id="$one">
+      <span class="mx_EventTile_sender">Alice</span>
+      <div class="mx_MTextBody">Hello <a href="https://example.org">https://example.org</a>
+        <div class="mx_LinkPreviewWidget">Preview text must stay out of requests</div>
+      </div>
+    </div>
+    <div class="mx_EventTile" data-event-id="$two">
+      <div class="mx_MTextBody"><mx-reply>Quoted message</mx-reply>Second message</div>
+    </div>
+    <div data-testid="event-tile" data-event-id="$three">
+      <div data-testid="event-tile-slot-sender">Bob</div>
+      <div class="mx_MTextBody">Other author</div>
+    </div>
+    <div class="mx_EventTile" data-event-id="$attachment">
+      <span class="mx_EventTile_sender">Carol</span>
+      <div class="mx_MTextBody mx_EventTile_caption">Attachment caption</div>
+    </div>
+    <div class="mx_EventTile" data-event-id="$four">
+      <div class="mx_MTextBody">After attachment</div>
+    </div>
+  </div>
+</div>
+<pre id="result">RUNNING</pre>
+<script>
+  globalThis.chrome = { runtime: { id: 'fixture' } };
+</script>
+<script src="../../src/content.js"></script>
+<script>
+  (async () => {
+    const assert = (value, message) => { if (!value) throw new Error(message); };
+    const translator = new ElementTranslator({ isInvalid: false, onInvalidated() {} });
+    const requests = [];
+    let complete;
+    translator.translateText = text => {
+      requests.push(text);
+      return requests.length === 1 ? new Promise(resolve => { complete = resolve; }) : Promise.resolve('Translated: ' + text);
+    };
+    await translator.processMessages();
+    assert(translator.messageGroups.size === 3, 'Expected three author groups');
+    const group = translator.messageGroups.get(document.querySelector('[data-event-id="$one"]'));
+    const sender = document.querySelector('.mx_EventTile_sender');
+    assert(sender.nextElementSibling === group.container, 'Control must follow nickname');
+    assert(getComputedStyle(group.container).position === 'static', 'Control must be inline');
+    assert(group.icon.querySelector('svg'), 'Shared Discord SVG missing');
+    const pending = translator.translateMessageGroup(group);
+    assert(requests[0] === 'Hello', 'URLs and previews must not reach the API');
+    assert(!group.messages[0].hidden && getComputedStyle(group.messages[0]).display !== 'none', 'Original hidden during translation');
+    complete('Ahoj');
+    await pending;
+    assert(requests[1] === 'Second message', 'Quote must not reach the API');
+    assert(getComputedStyle(group.messages[0]).display === 'none', 'Original still visible after completion');
+    assert(translator.messageTranslations.get('$one').translatedElement.textContent === 'Ahoj', 'Translation missing');
+    group.icon.click();
+    assert(getComputedStyle(group.messages[0]).display !== 'none', 'Click must restore original');
+    assert(requests.length === 2, 'Toggle submitted another API request');
+    await translator.processMessages();
+    assert(document.querySelectorAll('.wtp-element-control').length === 3, 'Duplicate controls');
+    sender.replaceWith(Object.assign(document.createElement('span'), { className: 'mx_EventTile_sender', textContent: 'Alice' }));
+    await translator.processMessages();
+    assert(document.querySelector('.mx_EventTile_sender').nextElementSibling === group.container, 'Control not reattached after rerender');
+    translator.setActive(false);
+    assert(document.querySelectorAll('.wtp-element-control').length === 0, 'Disable left controls behind');
+    assert(document.querySelectorAll('.discord-translator-translation').length === 0, 'Disable left translations behind');
+    document.getElementById('result').textContent = 'PASS: inline placement, SVG, groups, preview/quote exclusion, completed-only rendering, click toggle, rerender, cleanup';
+  })().catch(error => { document.getElementById('result').textContent = 'FAIL: ' + error.stack; });
+</script>
+</html>

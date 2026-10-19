@@ -217,7 +217,7 @@ async function toggleTranslator() {
   await extensionApi.storage.local.set({ translatorActive: translatorState.isActive });
 
   // Notify all Discord tabs
-  const tabs = await extensionApi.tabs.query({ url: '*://*.discord.com/*' });
+  const tabs = await extensionApi.tabs.query({ url: ['*://*.discord.com/*', 'https://app.element.io/*'] });
   for (const tab of tabs) {
     try {
       await extensionApi.tabs.sendMessage(tab.id, JSON.stringify({
@@ -248,8 +248,10 @@ extensionApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (typeof message !== 'string') return;
   try {
     const url = new URL(sender.url);
+    const { client } = JSON.parse(message);
     if (!['http:', 'https:'].includes(url.protocol) ||
-        !['discord.com', 'canary.discord.com', 'ptb.discord.com'].includes(url.hostname)) return;
+        (!['discord.com', 'canary.discord.com', 'ptb.discord.com'].includes(url.hostname) &&
+         client !== 'element')) return;
   } catch { return; }
   logger.log('📨 Message received, type:', typeof message);
 

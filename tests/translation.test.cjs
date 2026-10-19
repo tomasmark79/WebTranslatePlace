@@ -19,6 +19,7 @@ function load(responses) {
   vm.runInContext(source + `\nCONFIG.POLL_INTERVAL_MS = 0;
     globalThis.service = TranslationService;
     globalThis.Translator = DiscordTranslator;
+    globalThis.ElementTranslator = ElementTranslator;
     globalThis.config = CONFIG;`, context);
   return { context, requests };
 }
@@ -148,7 +149,8 @@ test('pomalý automatický překlad se při dalším cyklu nespustí podruhé', 
   assert.equal(translator.isTranslating, false);
 });
 
-test('background sdělí adresu, pokud síťové spojení selže', async () => {
+for (const site of ['https://discord.com/channels/1/2', 'https://app.element.io/#/room/example', 'https://chat.example.org/#/room/example']) {
+test(`background reports API connection errors for ${site}`, async () => {
   let listener;
   const context = vm.createContext({
     console: { log() {}, debug() {}, warn() {}, error() {} },
@@ -166,10 +168,12 @@ test('background sdělí adresu, pokud síťové spojení selže', async () => {
   });
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../src/background.js'), 'utf8'), context);
   const reply = await new Promise(resolve => listener(JSON.stringify({
-    type: 'fetch', args: ['http://127.0.0.1:5001/translate', { method: 'POST' }]
-  }), { url: 'https://discord.com/channels/1/2' }, resolve));
+    type: 'fetch', client: site.includes('discord.com') ? undefined : 'element',
+    args: ['http://127.0.0.1:5001/translate', { method: 'POST' }]
+  }), { url: site }, resolve));
   assert.match(JSON.parse(reply).error, /127\.0\.0\.1:5001.*Failed to fetch/);
 });
+}
 
 function fakeStyle(initial = '') {
   const values = new Map(initial ? [['display', [initial, '']]] : []);
@@ -482,6 +486,113 @@ test('Discord preserves the legacy shared language before separate settings are 
   context[apiNamespace].storage.local.get = async () => ({ translationTarget: 'de' });
   await context.service.translate('Hello');
   assert.equal(JSON.parse(requests[0].args[1].body).target, 'de');
+});
+
+function groupedElement(specs) {
+  const { context, requests } = load([]);
+  const rows = [], messages = [], calls = [];
+  const list = fakeElement();
+  context.document = {
+    getElementById: () => ({}), // Styles already present.
+    createElement: tag => fakeElement(tag.toUpperCase()),
+    querySelectorAll: () => rows
+  };
+  const translator = new context.ElementTranslator({ isInvalid: false, onInvalidated() {} });
+  translator.isElementVisible = () => true;
+  translator.extractCleanText = element => element.textContent;
+  translator.createFlagElement = () => {
+    const container = fakeElement('SPAN');
+    container.firstElementChild = fakeElement('BUTTON');
+    return container;
+  };
+  translator.translateText = async text => { calls.push(text); return `Translated: ${text}`; };
+  for (const [text, header = false, separateList = false] of specs) {
+    const row = fakeElement();
+    row.closest = () => null;
+    (separateList ? fakeElement() : list).insertBefore(row);
+    row.setAttribute('data-event-id', `$event${rows.length}`);
+    row.querySelector = selector => selector === translator.senderSelector ? row.sender : null;
+    if (header) {
+      row.sender = fakeElement('SPAN');
+      row.insertBefore(row.sender);
+      Object.defineProperty(row.sender, 'nextSibling', { get() {
+        return row.children[row.children.indexOf(this) + 1] || null;
+      } });
+    }
+    rows.push(row);
+    if (text !== null) {
+      const element = fakeElement();
+      element.className = 'mx_MTextBody mx_EventTile_content';
+      element.textContent = text;
+      element.closest = selector => selector === translator.rowSelector ? row : null;
+      row.insertBefore(element);
+      messages.push(element);
+    }
+  }
+  return { context, translator, rows, messages, calls, requests };
+}
+
+test('Element puts one shared Discord icon after each author, keeps continuations and attachment headers separate', async () => {
+  const h = groupedElement([['One', true], ['Two'], [null, true], ['After attachment'], ['Thread orphan', false, true]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  assert.equal(h.translator.messageGroups.size, 2);
+  const first = h.translator.messageGroups.get(h.rows[0]);
+  const second = h.translator.messageGroups.get(h.rows[2]);
+  assert.deepEqual([...first.messages], h.messages.slice(0, 2));
+  assert.deepEqual([...second.messages], [h.messages[2]]);
+  assert.equal(h.rows[0].children[1], first.container);
+  assert.equal(first.container.classList.contains('wtp-element-control'), true);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  assert.equal(h.rows[0].children.filter(node => node === first.container).length, 1);
+  assert.equal(h.translator.messageGroups.get(h.rows[0]), first);
+  await h.translator.translateMessageGroup(first);
+  assert.deepEqual(h.calls, ['One', 'Two']);
+  assert.equal(h.messages[0].style.getPropertyValue('display'), 'none');
+  await h.translator.translateMessageGroup(first);
+  assert.equal(h.messages[0].style.getPropertyValue('display'), '');
+  assert.equal(h.calls.length, 2);
+});
+
+test('Element ignores edited messages, quotes and preview cards', () => {
+  const h = groupedElement([['One', true]]);
+  const message = h.messages[0];
+  assert.equal(h.translator.shouldSkipMessage(message), false);
+  h.rows[0].querySelector = () => ({});
+  assert.equal(h.translator.shouldSkipMessage(message), true);
+  h.rows[0].querySelector = () => null;
+  const closest = message.closest;
+  message.closest = selector => selector.includes('.mx_ReplyTile') ? {} : closest(selector);
+  assert.equal(h.translator.shouldSkipMessage(message), true);
+});
+
+test('Element discards an in-flight result after a message edit and keeps avatars native', async () => {
+  const h = groupedElement([['One', true]]);
+  await h.translator.addGroupedFlagIcons(h.messages);
+  let finish;
+  h.translator.translateText = () => new Promise(resolve => { finish = resolve; });
+  const group = h.translator.messageGroups.get(h.rows[0]);
+  const pending = h.translator.translateMessageGroup(group);
+  h.messages[0].textContent = 'Edited';
+  finish('Jedna');
+  await pending;
+  assert.equal(h.translator.messageTranslations.size, 0);
+  assert.equal(h.translator.translationCache.size, 0);
+  h.translator.handleAvatarClick({ preventDefault() { assert.fail('Avatar intercepted'); } });
+});
+
+test('Element room routing and invalidation follow hash routes on any domain', () => {
+  const h = groupedElement([['One', true]]);
+  h.context.window = { location: { hash: '#/room/#extensions:gnome.org' } };
+  assert.equal(h.translator.getCurrentChannelId(), '#extensions:gnome.org');
+  h.context.window.location.hash += '?via=gnome.org';
+  assert.equal(h.translator.getCurrentChannelId(), '#extensions:gnome.org');
+  h.context.window.location.hash = '#/room/#extensions:gnome.org/$event';
+  assert.equal(h.translator.getCurrentChannelId(), '#extensions:gnome.org');
+  h.translator.currentChannelId = '#extensions:gnome.org';
+  h.context.window.location.hash = '#/room/!other:example.org';
+  const revision = h.translator.stateRevision;
+  assert.equal(h.translator.checkChannelChange(), true);
+  assert.ok(h.translator.stateRevision > revision);
 });
 
 function groupedDiscord(specs) {
