@@ -50,9 +50,9 @@ python3 scripts/build.py chrome firefox  # selected targets
 | --- | --- |
 | Chrome/Chromium | Open `chrome://extensions/`, enable **Developer mode**, choose **Load unpacked** and select `dist/chrome/`. |
 | Firefox | In `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on** and select `dist/firefox/manifest.json`. Temporary installation ends when Firefox exits; permanent installation requires Mozilla signing. |
-| Thunderbird | In **Add-ons and Themes**, choose **Install Add-on From File** from the gear menu and select `dist/webtranslateplace-thunderbird-0.1.0.xpi`. |
+| Thunderbird | In **Add-ons and Themes**, choose **Install Add-on From File** from the gear menu and select `dist/webtranslateplace-thunderbird-0.2.0.xpi`. |
 | Safari | Run `bash scripts/package-safari.sh`, build/run `SafariProject/` in Xcode and enable the extension with access to the desired sites. The generated ZIP is not directly installable. |
-| GNOME Web (experimental) | Enable experimental WebExtensions support and import `dist/webtranslateplace-epiphany-0.1.0.xpi` through the extension manager. |
+| GNOME Web (experimental) | Enable experimental WebExtensions support and import `dist/webtranslateplace-epiphany-0.2.0.xpi` through the extension manager. |
 
 Reload pages or reopen Thunderbird message/compose windows after installing or
 updating.
